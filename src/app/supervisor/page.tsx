@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarPlus, Copy, Download, LogIn, LogOut, Pencil, Plus, Search, ShieldCheck, Trash2, UsersRound } from "lucide-react";
+import { CalendarPlus, ClipboardList, Copy, Download, LogIn, LogOut, Pencil, Plus, Search, ShieldCheck, Trash2, UsersRound } from "lucide-react";
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
 import { Button, Field, TextArea } from "@/components/ui";
 import { KanbanBoard } from "@/components/KanbanBoard";
@@ -43,6 +43,8 @@ type EventForm = {
   active: boolean;
 };
 
+type SupervisorView = "tasks" | "attendance" | "volunteers";
+
 const emptyEvent: EventForm = {
   name: "",
   location: "",
@@ -72,6 +74,7 @@ export default function SupervisorPage() {
   const [taskForm, setTaskForm] = useState<TaskForm>(emptyTask);
   const [skillQuery, setSkillQuery] = useState("");
   const [copiedEventId, setCopiedEventId] = useState("");
+  const [activeView, setActiveView] = useState<SupervisorView>("tasks");
   const [errorMessage, setErrorMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [savingEvent, setSavingEvent] = useState(false);
@@ -190,6 +193,7 @@ export default function SupervisorPage() {
       });
       setSelectedEventId(eventId);
       setPendingEventId("");
+      setActiveView("tasks");
       setEventForm(emptyEvent);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to save event.");
@@ -254,6 +258,7 @@ export default function SupervisorPage() {
     setSelectedEventId(pendingEventId);
     setPendingEventId("");
     setTaskForm(emptyTask);
+    setActiveView("tasks");
   }
 
   return (
@@ -485,179 +490,215 @@ export default function SupervisorPage() {
               </section>
             ) : (
               <>
-              <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
-                <p className="text-sm font-bold text-ink/55">Managing event</p>
-                <h2 className="mt-1 text-2xl font-black">{selectedEvent.name}</h2>
-                <p className="mt-1 text-sm font-semibold text-ink/65">{selectedEvent.location}</p>
-              </section>
-
-              <section className="grid gap-3 sm:grid-cols-3">
-              <Metric title="Checked in now" value={attendance.length.toString()} />
-              <Metric title="Known volunteers" value={volunteers.length.toString()} />
-              <Metric title="Reported hours" value={(totalMinutes / 60).toFixed(1)} />
-            </section>
-
-            <section className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-              <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <UsersRound className="text-moss" />
-                    <h2 className="text-xl font-black">Live attendance</h2>
+                <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+                  <p className="text-sm font-bold text-ink/55">Managing event</p>
+                  <h2 className="mt-1 text-2xl font-black">{selectedEvent.name}</h2>
+                  <p className="mt-1 text-sm font-semibold text-ink/65">{selectedEvent.location}</p>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                    {[
+                      { id: "tasks" as SupervisorView, label: "Tasks", icon: ClipboardList },
+                      { id: "attendance" as SupervisorView, label: "Attendance", icon: UsersRound },
+                      { id: "volunteers" as SupervisorView, label: "Volunteers", icon: Search }
+                    ].map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <Button
+                          key={item.id}
+                          className={activeView === item.id ? "bg-moss text-white" : "bg-paper text-ink"}
+                          onClick={() => setActiveView(item.id)}
+                        >
+                          <Icon size={17} />
+                          {item.label}
+                        </Button>
+                      );
+                    })}
                   </div>
-                  <Button className="bg-paper text-ink" disabled={!selectedEventId} onClick={exportCsv}>
-                    <Download size={17} />
-                    CSV
-                  </Button>
-                </div>
-                <div className="mt-4 grid gap-3">
-                  {attendance.map((item) => (
-                    <article key={item.id} className="rounded-md border border-ink/10 bg-paper p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <h3 className="font-black">{item.volunteerName}</h3>
-                        <span className="text-xs font-bold text-moss">
-                          {item.checkedInAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                        </span>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </div>
+                </section>
 
-              <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
-                <h2 className="text-xl font-black">Create task</h2>
-                <div className="mt-4 grid gap-3">
-                  <Field label="Task title" value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} />
-                  <TextArea
-                    label="Description"
-                    value={taskForm.description}
-                    onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })}
-                  />
-                  <Field
-                    label="Skill tags"
-                    placeholder="setup, kids, hospitality"
-                    value={taskForm.skillTags}
-                    onChange={(event) => setTaskForm({ ...taskForm, skillTags: event.target.value })}
-                  />
-                  <Button className="bg-moss text-white" disabled={saving || !selectedEventId} onClick={handleSaveTask}>
-                    <Plus size={18} />
-                    {taskForm.id ? "Update Task" : "Add Task"}
-                  </Button>
-                </div>
-              </div>
-            </section>
-
-            <section>
-              <h2 className="mb-3 text-xl font-black">Task board</h2>
-              <KanbanBoard
-                tasks={tasks}
-                volunteers={volunteers}
-                onStatusChange={(task, status: TaskStatus) => updateTask(task, { status })}
-                onDelete={async (taskId) => {
-                  if (hasSupervisorAccess) await deleteTask(taskId);
-                  setTasks((items) => items.filter((item) => item.id !== taskId));
-                }}
-                onEdit={(task) =>
-                  setTaskForm({
-                    id: task.id,
-                    title: task.title,
-                    description: task.description,
-                    skillTags: task.skillTags.join(", ")
-                  })
-                }
-                onAssigneesChange={(task, volunteerIds) =>
-                  updateTask(task, {
-                    assignedVolunteerIds: volunteerIds
-                  })
-                }
-              />
-            </section>
-
-            <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
-              <h2 className="text-xl font-black">Volunteer notes and requests</h2>
-              <div className="mt-4 grid gap-3">
-                {feedback.length === 0 ? (
-                  <div className="rounded-md border border-ink/10 bg-paper p-3 text-sm font-semibold text-ink/65">
-                    No notes or task requests yet.
-                  </div>
-                ) : (
-                  feedback.map((item) => (
-                    <article key={item.id} className="rounded-md border border-ink/10 bg-paper p-3">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <h3 className="font-black">{item.volunteerName}</h3>
-                          <p className="mt-1 text-sm font-semibold text-ink/60">
-                            {item.kind === "more-tasks-request" ? "Requested another task" : item.taskTitle ?? "Task note"}
-                          </p>
+                {activeView === "tasks" && (
+                  <>
+                    <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+                      <h2 className="text-xl font-black">Task management</h2>
+                      <div className="mt-4 grid gap-3 lg:grid-cols-[0.8fr_1.2fr]">
+                        <div className="grid gap-3 rounded-md border border-ink/10 bg-paper p-3">
+                          <Field label="Task title" value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} />
+                          <TextArea
+                            label="Description"
+                            value={taskForm.description}
+                            onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })}
+                          />
+                          <Field
+                            label="Skill tags"
+                            placeholder="setup, kids, hospitality"
+                            value={taskForm.skillTags}
+                            onChange={(event) => setTaskForm({ ...taskForm, skillTags: event.target.value })}
+                          />
+                          <Button className="bg-moss text-white" disabled={saving || !selectedEventId} onClick={handleSaveTask}>
+                            <Plus size={18} />
+                            {taskForm.id ? "Update Task" : "Add Task"}
+                          </Button>
                         </div>
-                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-ink/45">
-                          {item.createdAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                        </span>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <Metric title="Tasks" value={tasks.length.toString()} />
+                          <Metric title="In progress" value={tasks.filter((task) => task.status === "in-progress").length.toString()} />
+                          <Metric title="Complete" value={tasks.filter((task) => task.status === "complete").length.toString()} />
+                        </div>
                       </div>
-                      <p className="mt-3 text-sm leading-6 text-ink/75">{item.message}</p>
-                    </article>
-                  ))
-                )}
-              </div>
-            </section>
+                    </section>
 
-            <section className="grid gap-5 lg:grid-cols-[1fr_0.8fr]">
-              <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <h2 className="text-xl font-black">Volunteer skills and notes</h2>
-                  <label className="relative block">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink/45" size={17} />
-                    <input
-                      className="focus-ring min-h-11 rounded-md border border-ink/15 bg-paper pl-9 pr-3 text-sm font-semibold"
-                      placeholder="Search skills"
-                      value={skillQuery}
-                      onChange={(event) => setSkillQuery(event.target.value)}
-                    />
-                  </label>
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {filteredVolunteers.map((volunteer) => (
-                    <article key={volunteer.id} className="rounded-md border border-ink/10 bg-paper p-3">
-                      <h3 className="font-black">
-                        {volunteer.firstName} {volunteer.lastName}
-                      </h3>
-                      <p className="mt-1 text-sm font-semibold text-ink/60">{volunteer.phone || volunteer.email}</p>
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {volunteer.skills.map((skill) => (
-                          <span key={skill} className="rounded bg-white px-2 py-1 text-xs font-bold text-moss">
-                            {skill}
-                          </span>
+                    <section>
+                      <h2 className="mb-3 text-xl font-black">Task board</h2>
+                      <KanbanBoard
+                        tasks={tasks}
+                        volunteers={volunteers}
+                        onStatusChange={(task, status: TaskStatus) => updateTask(task, { status })}
+                        onDelete={async (taskId) => {
+                          if (hasSupervisorAccess) await deleteTask(taskId);
+                          setTasks((items) => items.filter((item) => item.id !== taskId));
+                        }}
+                        onEdit={(task) =>
+                          setTaskForm({
+                            id: task.id,
+                            title: task.title,
+                            description: task.description,
+                            skillTags: task.skillTags.join(", ")
+                          })
+                        }
+                        onAssigneesChange={(task, volunteerIds) =>
+                          updateTask(task, {
+                            assignedVolunteerIds: volunteerIds
+                          })
+                        }
+                      />
+                    </section>
+                  </>
+                )}
+
+                {activeView === "attendance" && (
+                  <>
+                    <section className="grid gap-3 sm:grid-cols-3">
+                      <Metric title="Checked in now" value={attendance.length.toString()} />
+                      <Metric title="Known volunteers" value={volunteers.length.toString()} />
+                      <Metric title="Reported hours" value={(totalMinutes / 60).toFixed(1)} />
+                    </section>
+
+                    <section className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+                      <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <UsersRound className="text-moss" />
+                            <h2 className="text-xl font-black">Live attendance</h2>
+                          </div>
+                          <Button className="bg-paper text-ink" disabled={!selectedEventId} onClick={exportCsv}>
+                            <Download size={17} />
+                            CSV
+                          </Button>
+                        </div>
+                        <div className="mt-4 grid gap-3">
+                          {attendance.map((item) => (
+                            <article key={item.id} className="rounded-md border border-ink/10 bg-paper p-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <h3 className="font-black">{item.volunteerName}</h3>
+                                <span className="text-xs font-bold text-moss">
+                                  {item.checkedInAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                                </span>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+                        <h2 className="text-xl font-black">Attendance history</h2>
+                        <div className="mt-4 max-h-[32rem] overflow-auto">
+                          <table className="w-full min-w-[28rem] border-separate border-spacing-y-2 text-left text-sm">
+                            <thead className="text-xs uppercase tracking-[0.12em] text-ink/45">
+                              <tr>
+                                <th>Volunteer</th>
+                                <th>Status</th>
+                                <th>Minutes</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {history.map((item) => (
+                                <tr key={item.id} className="bg-paper">
+                                  <td className="rounded-l-md p-3 font-bold">{item.volunteerName}</td>
+                                  <td className="p-3 font-semibold text-moss">{item.status}</td>
+                                  <td className="rounded-r-md p-3 font-semibold">{item.totalMinutes ?? ""}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </section>
+                  </>
+                )}
+
+                {activeView === "volunteers" && (
+                  <>
+                    <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+                      <h2 className="text-xl font-black">Volunteer notes and requests</h2>
+                      <div className="mt-4 grid gap-3">
+                        {feedback.length === 0 ? (
+                          <div className="rounded-md border border-ink/10 bg-paper p-3 text-sm font-semibold text-ink/65">
+                            No notes or task requests yet.
+                          </div>
+                        ) : (
+                          feedback.map((item) => (
+                            <article key={item.id} className="rounded-md border border-ink/10 bg-paper p-3">
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                  <h3 className="font-black">{item.volunteerName}</h3>
+                                  <p className="mt-1 text-sm font-semibold text-ink/60">
+                                    {item.kind === "more-tasks-request" ? "Requested another task" : item.taskTitle ?? "Task note"}
+                                  </p>
+                                </div>
+                                <span className="text-xs font-bold uppercase tracking-[0.12em] text-ink/45">
+                                  {item.createdAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                                </span>
+                              </div>
+                              <p className="mt-3 text-sm leading-6 text-ink/75">{item.message}</p>
+                            </article>
+                          ))
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <h2 className="text-xl font-black">Volunteer skills and notes</h2>
+                        <label className="relative block">
+                          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink/45" size={17} />
+                          <input
+                            className="focus-ring min-h-11 rounded-md border border-ink/15 bg-paper pl-9 pr-3 text-sm font-semibold"
+                            placeholder="Search skills"
+                            value={skillQuery}
+                            onChange={(event) => setSkillQuery(event.target.value)}
+                          />
+                        </label>
+                      </div>
+                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        {filteredVolunteers.map((volunteer) => (
+                          <article key={volunteer.id} className="rounded-md border border-ink/10 bg-paper p-3">
+                            <h3 className="font-black">
+                              {volunteer.firstName} {volunteer.lastName}
+                            </h3>
+                            <p className="mt-1 text-sm font-semibold text-ink/60">{volunteer.phone || volunteer.email}</p>
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              {volunteer.skills.map((skill) => (
+                                <span key={skill} className="rounded bg-white px-2 py-1 text-xs font-bold text-moss">
+                                  {skill}
+                                </span>
+                              ))}
+                            </div>
+                            {volunteer.notes && <p className="mt-3 text-sm leading-6 text-ink/70">{volunteer.notes}</p>}
+                          </article>
                         ))}
                       </div>
-                      {volunteer.notes && <p className="mt-3 text-sm leading-6 text-ink/70">{volunteer.notes}</p>}
-                    </article>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
-                <h2 className="text-xl font-black">Attendance history</h2>
-                <div className="mt-4 max-h-[32rem] overflow-auto">
-                  <table className="w-full min-w-[28rem] border-separate border-spacing-y-2 text-left text-sm">
-                    <thead className="text-xs uppercase tracking-[0.12em] text-ink/45">
-                      <tr>
-                        <th>Volunteer</th>
-                        <th>Status</th>
-                        <th>Minutes</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {history.map((item) => (
-                        <tr key={item.id} className="bg-paper">
-                          <td className="rounded-l-md p-3 font-bold">{item.volunteerName}</td>
-                          <td className="p-3 font-semibold text-moss">{item.status}</td>
-                          <td className="rounded-r-md p-3 font-semibold">{item.totalMinutes ?? ""}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </section>
+                    </section>
+                  </>
+                )}
               </>
             )}
           </div>
