@@ -239,15 +239,21 @@ export default function VolunteerEventPage() {
                 <h2 className="text-xl font-black">Assigned tasks</h2>
               </div>
               <div className="mt-3 grid gap-3">
-                {(assignedTasks.length ? assignedTasks : tasks.slice(0, 2)).map((task) => (
-                  <article key={task.id} className="rounded-md border border-ink/10 bg-paper p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <h3 className="font-black">{task.title}</h3>
-                      <span className="rounded bg-white px-2 py-1 text-xs font-bold text-moss">{task.status}</span>
-                    </div>
-                    <p className="mt-1 text-sm leading-6 text-ink/70">{task.description}</p>
-                  </article>
-                ))}
+                {assignedTasks.length > 0 ? (
+                  assignedTasks.map((task) => (
+                    <article key={task.id} className="rounded-md border border-ink/10 bg-paper p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <h3 className="font-black">{task.title}</h3>
+                        <span className="rounded bg-white px-2 py-1 text-xs font-bold text-moss">{task.status}</span>
+                      </div>
+                      <p className="mt-1 text-sm leading-6 text-ink/70">{task.description}</p>
+                    </article>
+                  ))
+                ) : (
+                  <div className="rounded-md border border-ink/10 bg-paper p-3 text-sm font-semibold text-ink/65">
+                    No tasks assigned yet.
+                  </div>
+                )}
               </div>
             </div>
           </section>
