@@ -564,9 +564,9 @@ export default function SupervisorPage() {
                     skillTags: task.skillTags.join(", ")
                   })
                 }
-                onAssign={(task, volunteerId) =>
+                onAssigneesChange={(task, volunteerIds) =>
                   updateTask(task, {
-                    assignedVolunteerIds: Array.from(new Set([...task.assignedVolunteerIds, volunteerId]))
+                    assignedVolunteerIds: volunteerIds
                   })
                 }
               />

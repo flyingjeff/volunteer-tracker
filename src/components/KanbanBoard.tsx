@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Pencil, Trash2, UserPlus } from "lucide-react";
+import { Check, Pencil, Trash2, UserMinus, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui";
 import type { VolunteerProfile, VolunteerTask, TaskStatus } from "@/lib/types";
 
@@ -16,14 +16,14 @@ export function KanbanBoard({
   onStatusChange,
   onDelete,
   onEdit,
-  onAssign
+  onAssigneesChange
 }: {
   tasks: VolunteerTask[];
   volunteers: VolunteerProfile[];
   onStatusChange: (task: VolunteerTask, status: TaskStatus) => void;
   onDelete: (taskId: string) => void;
   onEdit: (task: VolunteerTask) => void;
-  onAssign: (task: VolunteerTask, volunteerId: string) => void;
+  onAssigneesChange: (task: VolunteerTask, volunteerIds: string[]) => void;
 }) {
   const volunteerName = (id: string) => {
     const volunteer = volunteers.find((item) => item.id === id);
@@ -72,30 +72,47 @@ export function KanbanBoard({
                   )}
 
                   <div className="mt-3 grid gap-2">
-                    <label className="grid gap-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/50">
-                      Assign
-                      <select
-                        className="focus-ring min-h-10 rounded-md border border-ink/10 bg-white px-2 text-sm font-semibold normal-case tracking-normal text-ink"
-                        value=""
-                        onChange={(event) => {
-                          if (event.target.value) onAssign(task, event.target.value);
-                        }}
-                      >
-                        <option value="">Choose volunteer</option>
-                        {volunteers.map((volunteer) => (
-                          <option key={volunteer.id} value={volunteer.id}>
-                            {volunteer.firstName} {volunteer.lastName}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <div className="grid gap-2">
+                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-ink/50">Assign volunteers</p>
+                      <div className="grid max-h-44 gap-1 overflow-auto rounded-md border border-ink/10 bg-white p-2">
+                        {volunteers.length === 0 ? (
+                          <p className="p-2 text-sm font-semibold text-ink/55">No volunteers yet.</p>
+                        ) : (
+                          volunteers.map((volunteer) => {
+                            const checked = task.assignedVolunteerIds.includes(volunteer.id);
+                            return (
+                              <label key={volunteer.id} className="flex min-h-9 items-center gap-2 rounded px-2 text-sm font-semibold text-ink">
+                                <input
+                                  className="h-4 w-4 accent-moss"
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(event) => {
+                                    const nextIds = event.target.checked
+                                      ? Array.from(new Set([...task.assignedVolunteerIds, volunteer.id]))
+                                      : task.assignedVolunteerIds.filter((id) => id !== volunteer.id);
+                                    onAssigneesChange(task, nextIds);
+                                  }}
+                                />
+                                {volunteer.firstName} {volunteer.lastName}
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
                     {task.assignedVolunteerIds.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {task.assignedVolunteerIds.map((id) => (
-                          <span key={id} className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-bold text-ink/70">
+                          <button
+                            key={id}
+                            className="focus-ring inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-bold text-ink/70"
+                            onClick={() => onAssigneesChange(task, task.assignedVolunteerIds.filter((volunteerId) => volunteerId !== id))}
+                            title="Remove volunteer"
+                          >
                             <UserPlus size={12} />
                             {volunteerName(id)}
-                          </span>
+                            <UserMinus size={12} />
+                          </button>
                         ))}
                       </div>
                     )}
