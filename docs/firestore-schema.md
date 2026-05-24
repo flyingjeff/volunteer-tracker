@@ -72,6 +72,7 @@ Volunteers do not use passwords. The app stores a random token in browser local 
 
 Create composite indexes when Firebase prompts:
 
+- `events`: `startsAt DESC`
 - `attendanceSessions`: `eventId ASC`, `status ASC`, `checkedInAt DESC`
 - `attendanceSessions`: `eventId ASC`, `checkedInAt DESC`
 - `tasks`: `eventId ASC`, `createdAt DESC`

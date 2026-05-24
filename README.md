@@ -23,7 +23,7 @@ firebase.json                    Spark-compatible static Firebase Hosting config
 
 - `/e?eventId=demo-sunday`: volunteer profile, check-in, check-out, assigned tasks.
 - `/e/demo-sunday`: production QR-friendly URL supported by Firebase Hosting rewrite.
-- `/supervisor`: Google Sign-In, live attendance, task creation, Kanban board, assignments, skills search, attendance history, CSV export.
+- `/supervisor`: Google Sign-In, event creation, QR link management, live attendance, task creation, Kanban board, assignments, skills search, attendance history, CSV export.
 
 ## Firebase Spark Plan Compatibility
 
@@ -113,6 +113,7 @@ If these variables are missing during `npm run build`, the supervisor dashboard 
 ## Google Workspace Integration Path
 
 - Supervisors use Google Sign-In now.
+- Supervisors create each event in the dashboard, copy its QR link, and manage event-specific tasks and attendance.
 - CSV attendance export is included for Google Sheets import.
 - A future automatic Sheets integration would likely require Cloud Functions or another backend.
 - Gmail notifications should stay manual or use an external tool while staying on Spark.

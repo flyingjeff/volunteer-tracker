@@ -67,6 +67,19 @@ function mapVolunteer(id: string, data: Record<string, unknown>): VolunteerProfi
   };
 }
 
+function mapEvent(id: string, data: Record<string, unknown>): EventSite {
+  return {
+    id,
+    name: String(data.name ?? ""),
+    location: String(data.location ?? ""),
+    startsAt: toDate(data.startsAt),
+    endsAt: data.endsAt ? toDate(data.endsAt) : undefined,
+    active: data.active !== false,
+    createdAt: data.createdAt ? toDate(data.createdAt) : undefined,
+    updatedAt: data.updatedAt ? toDate(data.updatedAt) : undefined
+  };
+}
+
 export async function findVolunteerByTokenHash(tokenHash: string) {
   const result = await getDocs(query(collection(db, "volunteers"), where("browserTokenHash", "==", tokenHash), limit(1)));
   const match = result.docs[0];
@@ -191,25 +204,34 @@ export async function deleteTask(taskId: string) {
   await deleteDoc(doc(db, "tasks", taskId));
 }
 
-export async function seedDemoEvent() {
-  const event: EventSite = {
-    id: "demo-sunday",
-    name: "Sunday Outreach",
-    location: "Su Presencia Church",
-    startsAt: new Date(),
-    active: true
+export function watchEvents(callback: (events: EventSite[]) => void) {
+  return onSnapshot(query(collection(db, "events"), orderBy("startsAt", "desc")), (snapshot) =>
+    callback(snapshot.docs.map((item) => mapEvent(item.id, item.data())))
+  );
+}
+
+export async function saveEvent(event: Partial<EventSite> & Pick<EventSite, "name" | "location" | "startsAt" | "active">) {
+  const payload = {
+    name: event.name,
+    location: event.location,
+    startsAt: event.startsAt,
+    endsAt: event.endsAt ?? null,
+    active: event.active,
+    updatedAt: serverTimestamp()
   };
 
-  await setDoc(
-    doc(db, "events", event.id),
-    {
-      name: event.name,
-      location: event.location,
-      startsAt: serverTimestamp(),
-      active: true
-    },
-    { merge: true }
-  );
+  if (event.id) {
+    await setDoc(doc(db, "events", event.id), payload, { merge: true });
+    return event.id;
+  }
 
-  return event;
+  const ref = await addDoc(collection(db, "events"), {
+    ...payload,
+    createdAt: serverTimestamp()
+  });
+  return ref.id;
+}
+
+export async function deleteEvent(eventId: string) {
+  await deleteDoc(doc(db, "events", eventId));
 }

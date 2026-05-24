@@ -49,4 +49,6 @@ export type EventSite = {
   startsAt: Date;
   endsAt?: Date;
   active: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
 };
