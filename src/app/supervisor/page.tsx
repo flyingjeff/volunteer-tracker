@@ -15,7 +15,6 @@ import {
   watchTasks,
   watchVolunteers
 } from "@/lib/firebaseService";
-import { demoAttendance, demoTasks, demoVolunteers } from "@/lib/mockData";
 import type { AttendanceSession, TaskStatus, VolunteerProfile, VolunteerTask } from "@/lib/types";
 
 const eventId = "demo-sunday";
@@ -36,22 +35,35 @@ const emptyTask: TaskForm = {
 
 export default function SupervisorPage() {
   const configured = isFirebaseConfigured();
+  const supervisorDomain = process.env.NEXT_PUBLIC_SUPERVISOR_EMAIL_DOMAIN?.trim().toLowerCase() ?? "";
   const [user, setUser] = useState<User | null>(null);
-  const [attendance, setAttendance] = useState<AttendanceSession[]>(configured ? [] : demoAttendance);
-  const [history, setHistory] = useState<AttendanceSession[]>(configured ? [] : demoAttendance);
-  const [tasks, setTasks] = useState<VolunteerTask[]>(configured ? [] : demoTasks);
-  const [volunteers, setVolunteers] = useState<VolunteerProfile[]>(configured ? [] : demoVolunteers);
+  const [authReady, setAuthReady] = useState(false);
+  const [attendance, setAttendance] = useState<AttendanceSession[]>([]);
+  const [history, setHistory] = useState<AttendanceSession[]>([]);
+  const [tasks, setTasks] = useState<VolunteerTask[]>([]);
+  const [volunteers, setVolunteers] = useState<VolunteerProfile[]>([]);
   const [taskForm, setTaskForm] = useState<TaskForm>(emptyTask);
   const [skillQuery, setSkillQuery] = useState("");
   const [saving, setSaving] = useState(false);
+  const setupComplete = configured && Boolean(supervisorDomain);
+  const userEmail = user?.email?.toLowerCase() ?? "";
+  const isAuthorizedSupervisor = Boolean(user && supervisorDomain && userEmail.endsWith(`@${supervisorDomain}`));
+  const hasSupervisorAccess = setupComplete && isAuthorizedSupervisor;
 
   useEffect(() => {
-    if (!configured) return;
-    return onAuthStateChanged(auth, setUser);
-  }, [configured]);
+    if (!setupComplete) {
+      setAuthReady(true);
+      return;
+    }
+
+    return onAuthStateChanged(auth, (nextUser) => {
+      setUser(nextUser);
+      setAuthReady(true);
+    });
+  }, [setupComplete]);
 
   useEffect(() => {
-    if (!configured || !user) return;
+    if (!hasSupervisorAccess) return;
     seedDemoEvent();
     const unsubAttendance = watchLiveAttendance(eventId, setAttendance);
     const unsubHistory = watchAttendanceHistory(eventId, setHistory);
@@ -64,7 +76,7 @@ export default function SupervisorPage() {
       unsubTasks();
       unsubVolunteers();
     };
-  }, [configured, user]);
+  }, [hasSupervisorAccess]);
 
   const filteredVolunteers = useMemo(() => {
     const query = skillQuery.trim().toLowerCase();
@@ -80,6 +92,7 @@ export default function SupervisorPage() {
   const totalMinutes = history.reduce((sum, item) => sum + (item.totalMinutes ?? 0), 0);
 
   async function handleSignIn() {
+    if (!setupComplete) return;
     await signInWithPopup(auth, googleProvider);
   }
 
@@ -98,25 +111,7 @@ export default function SupervisorPage() {
         .filter(Boolean)
     };
 
-    if (configured) {
-      await saveTask(payload);
-    } else if (taskForm.id) {
-      setTasks((items) =>
-        items.map((task) => (task.id === taskForm.id ? { ...task, ...payload, id: task.id, updatedAt: new Date() } : task))
-      );
-    } else {
-      setTasks((items) => [
-        {
-          ...payload,
-          id: crypto.randomUUID(),
-          status: "todo",
-          assignedVolunteerIds: [],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        ...items
-      ]);
-    }
+    if (hasSupervisorAccess) await saveTask(payload);
 
     setTaskForm(emptyTask);
     setSaving(false);
@@ -124,7 +119,7 @@ export default function SupervisorPage() {
 
   async function updateTask(task: VolunteerTask, changes: Partial<VolunteerTask>) {
     const next = { ...task, ...changes };
-    if (configured) await saveTask(next);
+    if (hasSupervisorAccess) await saveTask(next);
     setTasks((items) => items.map((item) => (item.id === task.id ? next : item)));
   }
 
@@ -149,8 +144,6 @@ export default function SupervisorPage() {
     URL.revokeObjectURL(url);
   }
 
-  const hasSupervisorAccess = !configured || user;
-
   return (
     <main className="min-h-screen px-4 py-5 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
@@ -160,7 +153,7 @@ export default function SupervisorPage() {
             <h1 className="mt-2 text-3xl font-black">Supervisor Dashboard</h1>
             <p className="mt-2 text-sm font-medium text-white/70">Live attendance, task board, skills, and hour reports.</p>
           </div>
-          {configured ? (
+          {setupComplete ? (
             user ? (
               <Button className="bg-white text-ink" onClick={() => signOut(auth)}>
                 <LogOut size={18} />
@@ -173,17 +166,42 @@ export default function SupervisorPage() {
               </Button>
             )
           ) : (
-            <span className="rounded-md bg-gold px-3 py-2 text-sm font-black text-ink">Demo mode</span>
+            <span className="rounded-md bg-gold px-3 py-2 text-sm font-black text-ink">Setup required</span>
           )}
         </header>
 
-        {!hasSupervisorAccess ? (
+        {!setupComplete ? (
+          <section className="mt-6 rounded-lg border border-ink/10 bg-white p-6 text-center shadow-soft">
+            <ShieldCheck className="mx-auto text-clay" size={42} />
+            <h2 className="mt-3 text-2xl font-black">Firebase setup required</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink/70">
+              Add the Firebase web app environment variables and supervisor email domain before building and deploying this static site.
+            </p>
+          </section>
+        ) : !authReady ? (
+          <section className="mt-6 rounded-lg border border-ink/10 bg-white p-6 text-center shadow-soft">
+            <ShieldCheck className="mx-auto text-moss" size={42} />
+            <h2 className="mt-3 text-2xl font-black">Checking access...</h2>
+          </section>
+        ) : !user ? (
           <section className="mt-6 rounded-lg border border-ink/10 bg-white p-6 text-center shadow-soft">
             <ShieldCheck className="mx-auto text-moss" size={42} />
             <h2 className="mt-3 text-2xl font-black">Supervisor access required</h2>
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink/70">
               Sign in with the church Google Workspace account to view attendance and manage volunteer tasks.
             </p>
+          </section>
+        ) : !isAuthorizedSupervisor ? (
+          <section className="mt-6 rounded-lg border border-ink/10 bg-white p-6 text-center shadow-soft">
+            <ShieldCheck className="mx-auto text-clay" size={42} />
+            <h2 className="mt-3 text-2xl font-black">Not authorized</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink/70">
+              This dashboard is limited to accounts ending in @{supervisorDomain}.
+            </p>
+            <Button className="mt-5 bg-ink text-white" onClick={() => signOut(auth)}>
+              <LogOut size={18} />
+              Sign out
+            </Button>
           </section>
         ) : (
           <div className="mt-5 grid gap-5">
@@ -249,7 +267,7 @@ export default function SupervisorPage() {
                 volunteers={volunteers}
                 onStatusChange={(task, status: TaskStatus) => updateTask(task, { status })}
                 onDelete={async (taskId) => {
-                  if (configured) await deleteTask(taskId);
+                  if (hasSupervisorAccess) await deleteTask(taskId);
                   setTasks((items) => items.filter((item) => item.id !== taskId));
                 }}
                 onEdit={(task) =>

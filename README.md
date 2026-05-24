@@ -85,11 +85,32 @@ Before deploy:
 
 1. Copy `.firebaserc.example` to `.firebaserc`.
 2. Replace `your-firebase-project-id` with the Firebase project ID.
-3. Add the Firebase web app environment variables locally.
+3. Add the Firebase web app environment variables locally in `.env.local` before building.
 4. Run `npm run build`, which writes the static site to `out`.
 5. Run `firebase deploy`.
 
 Do not enable Firebase web frameworks or Next.js server rendering for the Spark deployment. The included `firebase.json` deploys static files only.
+
+In Cloud Shell, create `.env.local` inside the cloned repo before `npm run build`:
+
+```bash
+cd ~/volunteer-tracker
+nano .env.local
+```
+
+Use this shape:
+
+```env
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+NEXT_PUBLIC_FIREBASE_APP_ID=...
+NEXT_PUBLIC_SUPERVISOR_EMAIL_DOMAIN=your-google-workspace-domain.org
+```
+
+If these variables are missing during `npm run build`, the supervisor dashboard will show a Firebase setup required screen instead of allowing access.
 
 ## Google Workspace Integration Path
 
