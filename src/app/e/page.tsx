@@ -15,7 +15,7 @@ import {
   watchTasks
 } from "@/lib/firebaseService";
 import { isFirebaseConfigured } from "@/lib/firebase";
-import { getOrCreateBrowserToken, sha256 } from "@/lib/token";
+import { clearBrowserToken, getOrCreateBrowserToken, sha256 } from "@/lib/token";
 import { demoAttendance, demoTasks } from "@/lib/mockData";
 import type { AttendanceSession, EventSite, VolunteerProfile, VolunteerTask } from "@/lib/types";
 
@@ -198,6 +198,31 @@ export default function VolunteerEventPage() {
     }
   }
 
+  async function endVolunteerSession() {
+    setErrorMessage("");
+    setSaving(true);
+
+    try {
+      if (configured && session) {
+        await checkOut(session);
+      }
+      clearBrowserToken();
+      setVolunteer(null);
+      setSession(null);
+      setTokenHash("");
+      setTaskNotes({});
+      setMoreTaskRequest("");
+      setSentMessage("");
+      setForm(emptyForm);
+      const hash = await sha256(getOrCreateBrowserToken());
+      setTokenHash(hash);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to end session.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function submitTaskNote(task: VolunteerTask) {
     if (!volunteer || !taskNotes[task.id]?.trim()) return;
     setErrorMessage("");
@@ -347,6 +372,10 @@ export default function VolunteerEventPage() {
                     Check In
                   </Button>
                 )}
+                <Button className="col-span-2 bg-paper text-ink" disabled={saving} onClick={endVolunteerSession}>
+                  <LogOut size={18} />
+                  End Session
+                </Button>
               </div>
               <div className="mt-4 rounded-md bg-paper p-3 text-sm font-semibold text-ink/75">
                 <Clock className="mr-2 inline-block" size={16} />

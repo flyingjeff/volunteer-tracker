@@ -13,6 +13,11 @@ export function getOrCreateBrowserToken() {
   return token;
 }
 
+export function clearBrowserToken() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(STORAGE_KEY);
+}
+
 export async function sha256(value: string) {
   const encoded = new TextEncoder().encode(value);
   const digest = await window.crypto.subtle.digest("SHA-256", encoded);
