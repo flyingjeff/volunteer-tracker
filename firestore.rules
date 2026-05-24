@@ -1,0 +1,35 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSupervisorDomain() {
+      return isSignedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email.matches('.*@supresenciachurch\\.org$');
+    }
+
+    match /events/{eventId} {
+      allow read: if true;
+      allow write: if isSupervisorDomain();
+    }
+
+    match /volunteers/{volunteerId} {
+      allow create: if true;
+      allow read, update, delete: if isSupervisorDomain();
+    }
+
+    match /attendanceSessions/{sessionId} {
+      allow create: if true;
+      allow read, update, delete: if isSupervisorDomain();
+    }
+
+    match /tasks/{taskId} {
+      allow read: if true;
+      allow write: if isSupervisorDomain();
+    }
+  }
+}

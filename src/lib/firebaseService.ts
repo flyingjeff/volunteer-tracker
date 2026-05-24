@@ -1,0 +1,215 @@
+import {
+  addDoc,
+  collection,
+  doc,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+  updateDoc,
+  where,
+  deleteDoc
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import type { AttendanceSession, EventSite, VolunteerProfile, VolunteerTask } from "@/lib/types";
+
+function toDate(value: unknown) {
+  return value instanceof Timestamp ? value.toDate() : value instanceof Date ? value : new Date();
+}
+
+function mapAttendance(id: string, data: Record<string, unknown>): AttendanceSession {
+  return {
+    id,
+    eventId: String(data.eventId ?? ""),
+    siteId: String(data.siteId ?? ""),
+    volunteerId: String(data.volunteerId ?? ""),
+    volunteerName: String(data.volunteerName ?? ""),
+    status: data.status === "checked-out" ? "checked-out" : "checked-in",
+    checkedInAt: toDate(data.checkedInAt),
+    checkedOutAt: data.checkedOutAt ? toDate(data.checkedOutAt) : undefined,
+    totalMinutes: typeof data.totalMinutes === "number" ? data.totalMinutes : undefined
+  };
+}
+
+function mapTask(id: string, data: Record<string, unknown>): VolunteerTask {
+  return {
+    id,
+    eventId: String(data.eventId ?? ""),
+    siteId: String(data.siteId ?? ""),
+    title: String(data.title ?? ""),
+    description: String(data.description ?? ""),
+    status: data.status === "complete" ? "complete" : data.status === "in-progress" ? "in-progress" : "todo",
+    assignedVolunteerIds: Array.isArray(data.assignedVolunteerIds) ? data.assignedVolunteerIds.map(String) : [],
+    skillTags: Array.isArray(data.skillTags) ? data.skillTags.map(String) : [],
+    createdAt: toDate(data.createdAt),
+    updatedAt: toDate(data.updatedAt)
+  };
+}
+
+function mapVolunteer(id: string, data: Record<string, unknown>): VolunteerProfile {
+  return {
+    id,
+    firstName: String(data.firstName ?? ""),
+    lastName: String(data.lastName ?? ""),
+    phone: String(data.phone ?? ""),
+    email: String(data.email ?? ""),
+    skills: Array.isArray(data.skills) ? data.skills.map(String) : [],
+    emergencyContact: String(data.emergencyContact ?? ""),
+    notes: String(data.notes ?? ""),
+    consentAcknowledged: Boolean(data.consentAcknowledged),
+    browserTokenHash: String(data.browserTokenHash ?? ""),
+    createdAt: toDate(data.createdAt),
+    updatedAt: toDate(data.updatedAt)
+  };
+}
+
+export async function findVolunteerByTokenHash(tokenHash: string) {
+  const result = await getDocs(query(collection(db, "volunteers"), where("browserTokenHash", "==", tokenHash), limit(1)));
+  const match = result.docs[0];
+  return match ? mapVolunteer(match.id, match.data()) : null;
+}
+
+export async function upsertVolunteer(
+  tokenHash: string,
+  profile: Omit<VolunteerProfile, "id" | "browserTokenHash" | "createdAt" | "updatedAt">
+) {
+  const existing = await findVolunteerByTokenHash(tokenHash);
+  const payload = {
+    ...profile,
+    browserTokenHash: tokenHash,
+    updatedAt: serverTimestamp()
+  };
+
+  if (existing) {
+    await setDoc(doc(db, "volunteers", existing.id), payload, { merge: true });
+    return existing.id;
+  }
+
+  const ref = await addDoc(collection(db, "volunteers"), {
+    ...payload,
+    createdAt: serverTimestamp()
+  });
+  return ref.id;
+}
+
+export async function checkIn(eventId: string, siteId: string, volunteer: VolunteerProfile) {
+  const existing = await getDocs(
+    query(
+      collection(db, "attendanceSessions"),
+      where("eventId", "==", eventId),
+      where("volunteerId", "==", volunteer.id),
+      where("status", "==", "checked-in"),
+      limit(1)
+    )
+  );
+
+  if (!existing.empty) return existing.docs[0].id;
+
+  const ref = await addDoc(collection(db, "attendanceSessions"), {
+    eventId,
+    siteId,
+    volunteerId: volunteer.id,
+    volunteerName: `${volunteer.firstName} ${volunteer.lastName}`.trim(),
+    status: "checked-in",
+    checkedInAt: serverTimestamp()
+  });
+
+  return ref.id;
+}
+
+export async function checkOut(session: AttendanceSession) {
+  const checkedOutAt = new Date();
+  const totalMinutes = Math.max(0, Math.round((checkedOutAt.getTime() - session.checkedInAt.getTime()) / 60000));
+  await updateDoc(doc(db, "attendanceSessions", session.id), {
+    status: "checked-out",
+    checkedOutAt,
+    totalMinutes
+  });
+}
+
+export function watchLiveAttendance(eventId: string, callback: (sessions: AttendanceSession[]) => void) {
+  return onSnapshot(
+    query(
+      collection(db, "attendanceSessions"),
+      where("eventId", "==", eventId),
+      where("status", "==", "checked-in"),
+      orderBy("checkedInAt", "desc")
+    ),
+    (snapshot) => callback(snapshot.docs.map((item) => mapAttendance(item.id, item.data())))
+  );
+}
+
+export function watchAttendanceHistory(eventId: string, callback: (sessions: AttendanceSession[]) => void) {
+  return onSnapshot(
+    query(collection(db, "attendanceSessions"), where("eventId", "==", eventId), orderBy("checkedInAt", "desc"), limit(75)),
+    (snapshot) => callback(snapshot.docs.map((item) => mapAttendance(item.id, item.data())))
+  );
+}
+
+export function watchTasks(eventId: string, callback: (tasks: VolunteerTask[]) => void) {
+  return onSnapshot(
+    query(collection(db, "tasks"), where("eventId", "==", eventId), orderBy("createdAt", "desc")),
+    (snapshot) => callback(snapshot.docs.map((item) => mapTask(item.id, item.data())))
+  );
+}
+
+export function watchVolunteers(callback: (volunteers: VolunteerProfile[]) => void) {
+  return onSnapshot(query(collection(db, "volunteers"), orderBy("lastName", "asc")), (snapshot) =>
+    callback(snapshot.docs.map((item) => mapVolunteer(item.id, item.data())))
+  );
+}
+
+export async function saveTask(task: Partial<VolunteerTask> & Pick<VolunteerTask, "eventId" | "siteId" | "title">) {
+  const payload = {
+    eventId: task.eventId,
+    siteId: task.siteId,
+    title: task.title,
+    description: task.description ?? "",
+    status: task.status ?? "todo",
+    assignedVolunteerIds: task.assignedVolunteerIds ?? [],
+    skillTags: task.skillTags ?? [],
+    updatedAt: serverTimestamp()
+  };
+
+  if (task.id) {
+    await setDoc(doc(db, "tasks", task.id), payload, { merge: true });
+    return task.id;
+  }
+
+  const ref = await addDoc(collection(db, "tasks"), {
+    ...payload,
+    createdAt: serverTimestamp()
+  });
+  return ref.id;
+}
+
+export async function deleteTask(taskId: string) {
+  await deleteDoc(doc(db, "tasks", taskId));
+}
+
+export async function seedDemoEvent() {
+  const event: EventSite = {
+    id: "demo-sunday",
+    name: "Sunday Outreach",
+    location: "Su Presencia Church",
+    startsAt: new Date(),
+    active: true
+  };
+
+  await setDoc(
+    doc(db, "events", event.id),
+    {
+      name: event.name,
+      location: event.location,
+      startsAt: serverTimestamp(),
+      active: true
+    },
+    { merge: true }
+  );
+
+  return event;
+}

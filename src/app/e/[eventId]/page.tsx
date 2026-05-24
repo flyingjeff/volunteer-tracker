@@ -1,0 +1,245 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, Clock, ClipboardList, LogOut, UserRoundPlus } from "lucide-react";
+import { Button, Field, TextArea } from "@/components/ui";
+import { checkIn, checkOut, findVolunteerByTokenHash, upsertVolunteer, watchLiveAttendance, watchTasks } from "@/lib/firebaseService";
+import { isFirebaseConfigured } from "@/lib/firebase";
+import { getOrCreateBrowserToken, sha256 } from "@/lib/token";
+import { demoAttendance, demoTasks } from "@/lib/mockData";
+import type { AttendanceSession, VolunteerProfile, VolunteerTask } from "@/lib/types";
+
+type FormState = {
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+  skills: string;
+  emergencyContact: string;
+  notes: string;
+  consentAcknowledged: boolean;
+};
+
+const emptyForm: FormState = {
+  firstName: "",
+  lastName: "",
+  phone: "",
+  email: "",
+  skills: "",
+  emergencyContact: "",
+  notes: "",
+  consentAcknowledged: false
+};
+
+export default function VolunteerEventPage({ params }: { params: { eventId: string } }) {
+  const eventId = params.eventId;
+  const siteId = "main";
+  const configured = isFirebaseConfigured();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [tokenHash, setTokenHash] = useState("");
+  const [volunteer, setVolunteer] = useState<VolunteerProfile | null>(null);
+  const [session, setSession] = useState<AttendanceSession | null>(null);
+  const [tasks, setTasks] = useState<VolunteerTask[]>(configured ? [] : demoTasks);
+  const [form, setForm] = useState<FormState>(emptyForm);
+
+  useEffect(() => {
+    async function boot() {
+      const hash = await sha256(getOrCreateBrowserToken());
+      setTokenHash(hash);
+
+      if (configured) {
+        const existing = await findVolunteerByTokenHash(hash);
+        if (existing) setVolunteer(existing);
+      }
+
+      setLoading(false);
+    }
+
+    boot().catch(() => setLoading(false));
+  }, [configured]);
+
+  useEffect(() => {
+    if (!configured) {
+      setSession(demoAttendance[0]);
+      return;
+    }
+
+    const unwatchAttendance = watchLiveAttendance(eventId, (items) => {
+      setSession((current) => items.find((item) => item.volunteerId === volunteer?.id) ?? current);
+    });
+    const unwatchTasks = watchTasks(eventId, setTasks);
+
+    return () => {
+      unwatchAttendance();
+      unwatchTasks();
+    };
+  }, [configured, eventId, volunteer?.id]);
+
+  const assignedTasks = useMemo(
+    () => tasks.filter((task) => volunteer && task.assignedVolunteerIds.includes(volunteer.id)),
+    [tasks, volunteer]
+  );
+
+  async function saveProfile() {
+    if (!form.firstName || !form.lastName || !form.consentAcknowledged) return;
+    setSaving(true);
+
+    const profile = {
+      firstName: form.firstName.trim(),
+      lastName: form.lastName.trim(),
+      phone: form.phone.trim(),
+      email: form.email.trim(),
+      skills: form.skills
+        .split(",")
+        .map((skill) => skill.trim())
+        .filter(Boolean),
+      emergencyContact: form.emergencyContact.trim(),
+      notes: form.notes.trim(),
+      consentAcknowledged: form.consentAcknowledged
+    };
+
+    if (configured) {
+      const id = await upsertVolunteer(tokenHash, profile);
+      setVolunteer({ ...profile, id, browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
+    } else {
+      setVolunteer({ ...profile, id: "demo-local", browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
+    }
+
+    setSaving(false);
+  }
+
+  async function handleCheckIn() {
+    if (!volunteer) return;
+    setSaving(true);
+
+    if (configured) {
+      await checkIn(eventId, siteId, volunteer);
+    } else {
+      setSession({
+        id: "local-session",
+        eventId,
+        siteId,
+        volunteerId: volunteer.id,
+        volunteerName: `${volunteer.firstName} ${volunteer.lastName}`,
+        status: "checked-in",
+        checkedInAt: new Date()
+      });
+    }
+
+    setSaving(false);
+  }
+
+  async function handleCheckOut() {
+    if (!session) return;
+    setSaving(true);
+    if (configured) await checkOut(session);
+    setSession(null);
+    setSaving(false);
+  }
+
+  if (loading) {
+    return <main className="grid min-h-screen place-items-center px-5 text-sm font-semibold text-ink">Loading check-in...</main>;
+  }
+
+  return (
+    <main className="min-h-screen px-4 py-5">
+      <div className="mx-auto max-w-md">
+        <header className="rounded-lg bg-moss p-5 text-white shadow-soft">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/75">Su Presencia Church</p>
+          <h1 className="mt-2 text-3xl font-black">Volunteer Check-In</h1>
+          <p className="mt-2 text-sm font-medium text-white/80">Event: {eventId}</p>
+        </header>
+
+        {!configured && (
+          <div className="mt-4 rounded-md border border-gold/40 bg-gold/15 p-3 text-sm font-medium text-ink">
+            Demo mode is active until Firebase environment variables are configured.
+          </div>
+        )}
+
+        {!volunteer ? (
+          <section className="mt-4 rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+            <div className="flex items-center gap-2">
+              <UserRoundPlus className="text-moss" />
+              <h2 className="text-xl font-black">Create your profile</h2>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <Field label="First name" value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} />
+              <Field label="Last name" value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} />
+              <Field label="Phone" type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+              <Field label="Email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+              <Field
+                label="Skills/interests"
+                placeholder="kids, setup, greeting"
+                value={form.skills}
+                onChange={(event) => setForm({ ...form, skills: event.target.value })}
+              />
+              <Field
+                label="Emergency contact"
+                value={form.emergencyContact}
+                onChange={(event) => setForm({ ...form, emergencyContact: event.target.value })}
+              />
+              <TextArea label="Notes" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
+              <label className="flex gap-3 rounded-md border border-ink/10 bg-paper p-3 text-sm font-semibold text-ink">
+                <input
+                  className="mt-1 h-5 w-5 accent-moss"
+                  type="checkbox"
+                  checked={form.consentAcknowledged}
+                  onChange={(event) => setForm({ ...form, consentAcknowledged: event.target.checked })}
+                />
+                I acknowledge the volunteer consent and waiver for this event.
+              </label>
+              <Button className="bg-moss text-white" disabled={saving} onClick={saveProfile}>
+                Save Profile
+              </Button>
+            </div>
+          </section>
+        ) : (
+          <section className="mt-4 grid gap-4">
+            <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+              <p className="text-sm font-semibold text-ink/60">Welcome back</p>
+              <h2 className="text-2xl font-black">
+                {volunteer.firstName} {volunteer.lastName}
+              </h2>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {session ? (
+                  <Button className="col-span-2 bg-clay text-white" disabled={saving} onClick={handleCheckOut}>
+                    <LogOut size={18} />
+                    Check Out
+                  </Button>
+                ) : (
+                  <Button className="col-span-2 bg-moss text-white" disabled={saving} onClick={handleCheckIn}>
+                    <CheckCircle2 size={18} />
+                    Check In
+                  </Button>
+                )}
+              </div>
+              <div className="mt-4 rounded-md bg-paper p-3 text-sm font-semibold text-ink/75">
+                <Clock className="mr-2 inline-block" size={16} />
+                {session ? `Checked in at ${session.checkedInAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Not checked in"}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="text-moss" />
+                <h2 className="text-xl font-black">Assigned tasks</h2>
+              </div>
+              <div className="mt-3 grid gap-3">
+                {(assignedTasks.length ? assignedTasks : tasks.slice(0, 2)).map((task) => (
+                  <article key={task.id} className="rounded-md border border-ink/10 bg-paper p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="font-black">{task.title}</h3>
+                      <span className="rounded bg-white px-2 py-1 text-xs font-bold text-moss">{task.status}</span>
+                    </div>
+                    <p className="mt-1 text-sm leading-6 text-ink/70">{task.description}</p>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
+    </main>
+  );
+}
