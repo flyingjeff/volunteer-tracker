@@ -67,6 +67,7 @@ export default function SupervisorPage() {
   const [volunteers, setVolunteers] = useState<VolunteerProfile[]>([]);
   const [events, setEvents] = useState<EventSite[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
+  const [pendingEventId, setPendingEventId] = useState("");
   const [eventForm, setEventForm] = useState<EventForm>(emptyEvent);
   const [taskForm, setTaskForm] = useState<TaskForm>(emptyTask);
   const [skillQuery, setSkillQuery] = useState("");
@@ -79,6 +80,7 @@ export default function SupervisorPage() {
   const isAuthorizedSupervisor = Boolean(user && supervisorDomain && userEmail.endsWith(`@${supervisorDomain}`));
   const hasSupervisorAccess = setupComplete && isAuthorizedSupervisor;
   const selectedEvent = events.find((event) => event.id === selectedEventId) ?? null;
+  const pendingEvent = events.find((event) => event.id === pendingEventId) ?? null;
 
   useEffect(() => {
     if (!setupComplete) {
@@ -102,12 +104,6 @@ export default function SupervisorPage() {
       unsubVolunteers();
     };
   }, [hasSupervisorAccess]);
-
-  useEffect(() => {
-    if (!selectedEventId && events.length > 0) {
-      setSelectedEventId(events[0].id);
-    }
-  }, [events, selectedEventId]);
 
   useEffect(() => {
     if (!hasSupervisorAccess || !selectedEventId) {
@@ -193,6 +189,7 @@ export default function SupervisorPage() {
         active: eventForm.active
       });
       setSelectedEventId(eventId);
+      setPendingEventId("");
       setEventForm(emptyEvent);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to save event.");
@@ -242,6 +239,21 @@ export default function SupervisorPage() {
     await navigator.clipboard.writeText(getQrLink(eventId));
     setCopiedEventId(eventId);
     window.setTimeout(() => setCopiedEventId(""), 1800);
+  }
+
+  function requestEventChange(eventId: string) {
+    if (!selectedEventId || selectedEventId === eventId) {
+      setSelectedEventId(eventId);
+      return;
+    }
+
+    setPendingEventId(eventId);
+  }
+
+  function confirmEventChange() {
+    setSelectedEventId(pendingEventId);
+    setPendingEventId("");
+    setTaskForm(emptyTask);
   }
 
   return (
@@ -311,6 +323,25 @@ export default function SupervisorPage() {
           </section>
         ) : (
           <div className="mt-5 grid gap-5">
+            {pendingEvent && (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-ink/55 px-4">
+                <section className="w-full max-w-md rounded-lg bg-white p-5 shadow-soft">
+                  <h2 className="text-2xl font-black">Change event?</h2>
+                  <p className="mt-2 text-sm leading-6 text-ink/70">
+                    You are currently managing {selectedEvent?.name}. Switch to {pendingEvent.name}?
+                  </p>
+                  <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                    <Button className="bg-moss text-white" onClick={confirmEventChange}>
+                      Switch Event
+                    </Button>
+                    <Button className="bg-paper text-ink" onClick={() => setPendingEventId("")}>
+                      Stay Here
+                    </Button>
+                  </div>
+                </section>
+              </div>
+            )}
+
             <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
               <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
                 <div className="flex items-center gap-2">
@@ -363,8 +394,11 @@ export default function SupervisorPage() {
                     <select
                       className="focus-ring min-h-11 rounded-md border border-ink/15 bg-paper px-3 text-sm font-bold text-ink"
                       value={selectedEventId}
-                      onChange={(event) => setSelectedEventId(event.target.value)}
+                      onChange={(event) => requestEventChange(event.target.value)}
                     >
+                      <option value="" disabled>
+                        Select event
+                      </option>
                       {events.map((eventItem) => (
                         <option key={eventItem.id} value={eventItem.id}>
                           {eventItem.name}
@@ -388,7 +422,7 @@ export default function SupervisorPage() {
                         }`}
                       >
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <button className="text-left" onClick={() => setSelectedEventId(eventItem.id)}>
+                          <button className="text-left" onClick={() => requestEventChange(eventItem.id)}>
                             <h3 className="font-black">{eventItem.name}</h3>
                             <p className="mt-1 text-sm font-semibold text-ink/60">{eventItem.location}</p>
                             <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/45">
@@ -441,15 +475,23 @@ export default function SupervisorPage() {
               </div>
             </section>
 
-            {selectedEvent && (
+            {!selectedEvent ? (
+              <section className="rounded-lg border border-ink/10 bg-white p-6 text-center shadow-soft">
+                <ShieldCheck className="mx-auto text-moss" size={42} />
+                <h2 className="mt-3 text-2xl font-black">Select an event</h2>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink/70">
+                  Choose an existing event or create a new one before managing attendance, tasks, and volunteer assignments.
+                </p>
+              </section>
+            ) : (
+              <>
               <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
                 <p className="text-sm font-bold text-ink/55">Managing event</p>
                 <h2 className="mt-1 text-2xl font-black">{selectedEvent.name}</h2>
                 <p className="mt-1 text-sm font-semibold text-ink/65">{selectedEvent.location}</p>
               </section>
-            )}
 
-            <section className="grid gap-3 sm:grid-cols-3">
+              <section className="grid gap-3 sm:grid-cols-3">
               <Metric title="Checked in now" value={attendance.length.toString()} />
               <Metric title="Known volunteers" value={volunteers.length.toString()} />
               <Metric title="Reported hours" value={(totalMinutes / 60).toFixed(1)} />
@@ -616,6 +658,8 @@ export default function SupervisorPage() {
                 </div>
               </div>
             </section>
+              </>
+            )}
           </div>
         )}
       </div>
