@@ -20,7 +20,7 @@ service cloud.firestore {
     match /volunteers/{volunteerId} {
       allow create: if request.resource.data.browserTokenHash == volunteerId;
       allow read: if isSupervisorDomain()
-        || resource.data.browserTokenHash == volunteerId;
+        || volunteerId.matches('[0-9a-f]{64}');
       allow update: if isSupervisorDomain()
         || (
           resource.data.browserTokenHash == volunteerId
