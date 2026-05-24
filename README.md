@@ -25,8 +25,6 @@ firebase.json                    Spark-compatible static Firebase Hosting config
 - `/e/demo-sunday`: production QR-friendly URL supported by Firebase Hosting rewrite.
 - `/supervisor`: Google Sign-In, live attendance, task creation, Kanban board, assignments, skills search, attendance history, CSV export.
 
-The app runs in demo mode until Firebase environment variables are present.
-
 ## Firebase Spark Plan Compatibility
 
 This MVP is designed to run on the Firebase Spark plan.

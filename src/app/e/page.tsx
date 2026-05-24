@@ -164,12 +164,6 @@ export default function VolunteerEventPage() {
           <p className="mt-2 text-sm font-medium text-white/80">Event: {eventId}</p>
         </header>
 
-        {!configured && (
-          <div className="mt-4 rounded-md border border-gold/40 bg-gold/15 p-3 text-sm font-medium text-ink">
-            Demo mode is active until Firebase environment variables are configured.
-          </div>
-        )}
-
         {!volunteer ? (
           <section className="mt-4 rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
             <div className="flex items-center gap-2">
