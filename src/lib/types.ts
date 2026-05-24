@@ -13,6 +13,12 @@ export type VolunteerProfile = {
   updatedAt: Date;
 };
 
+export type VolunteerLookup = {
+  id: string;
+  volunteerId: string;
+  updatedAt?: Date;
+};
+
 export type AttendanceStatus = "checked-in" | "checked-out";
 
 export type AttendanceSession = {

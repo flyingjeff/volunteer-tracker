@@ -7,8 +7,10 @@ import {
   addTaskFeedback,
   checkIn,
   checkOut,
+  findVolunteerByLookup,
   findVolunteerByTokenHash,
   joinTask,
+  saveVolunteerLookup,
   upsertVolunteer,
   watchEvent,
   watchVolunteerAttendanceSession,
@@ -30,6 +32,11 @@ type FormState = {
   consentAcknowledged: boolean;
 };
 
+type FindProfileState = {
+  email: string;
+  phone: string;
+};
+
 const emptyForm: FormState = {
   firstName: "",
   lastName: "",
@@ -40,6 +47,19 @@ const emptyForm: FormState = {
   notes: "",
   consentAcknowledged: false
 };
+
+const emptyFindProfile: FindProfileState = {
+  email: "",
+  phone: ""
+};
+
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function normalizePhone(value: string) {
+  return value.replace(/\D/g, "");
+}
 
 function getEventIdFromUrl() {
   if (typeof window === "undefined") return "demo-sunday";
@@ -62,6 +82,7 @@ export default function VolunteerEventPage() {
   const [session, setSession] = useState<AttendanceSession | null>(null);
   const [tasks, setTasks] = useState<VolunteerTask[]>(configured ? [] : demoTasks);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [findProfile, setFindProfile] = useState<FindProfileState>(emptyFindProfile);
   const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
   const [moreTaskRequest, setMoreTaskRequest] = useState("");
   const [sentMessage, setSentMessage] = useState("");
@@ -125,6 +146,10 @@ export default function VolunteerEventPage() {
     [tasks, volunteer]
   );
 
+  async function profileLookupId(email: string, phone: string) {
+    return sha256(`${normalizeEmail(email)}|${normalizePhone(phone)}`);
+  }
+
   async function saveProfile() {
     if (!form.firstName || !form.lastName || !form.consentAcknowledged) return;
     setErrorMessage("");
@@ -147,12 +172,57 @@ export default function VolunteerEventPage() {
     try {
       if (configured) {
         const id = await upsertVolunteer(tokenHash, profile);
+        if (profile.email && profile.phone) {
+          await saveVolunteerLookup(await profileLookupId(profile.email, profile.phone), id);
+        }
         setVolunteer({ ...profile, id, browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
       } else {
         setVolunteer({ ...profile, id: "demo-local", browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to save profile.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function findExistingProfile() {
+    if (!findProfile.email || !findProfile.phone) return;
+    setErrorMessage("");
+    setSaving(true);
+
+    try {
+      if (!configured) {
+        setErrorMessage("Profile lookup is available after Firebase is configured.");
+        return;
+      }
+
+      const existing = await findVolunteerByLookup(await profileLookupId(findProfile.email, findProfile.phone));
+      if (!existing) {
+        setErrorMessage("No profile found for that email and phone.");
+        return;
+      }
+
+      const profile = {
+        firstName: existing.firstName,
+        lastName: existing.lastName,
+        phone: existing.phone,
+        email: existing.email,
+        skills: existing.skills,
+        emergencyContact: existing.emergencyContact,
+        notes: existing.notes,
+        consentAcknowledged: existing.consentAcknowledged
+      };
+      const id = await upsertVolunteer(tokenHash, profile);
+      if (profile.email && profile.phone) {
+        await saveVolunteerLookup(await profileLookupId(profile.email, profile.phone), id);
+      }
+
+      setVolunteer({ ...profile, id, browserTokenHash: tokenHash, createdAt: existing.createdAt, updatedAt: new Date() });
+      setFindProfile(emptyFindProfile);
+      setSentMessage("Profile found. Welcome back.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to find profile.");
     } finally {
       setSaving(false);
     }
@@ -317,42 +387,68 @@ export default function VolunteerEventPage() {
         )}
 
         {!volunteer ? (
-          <section className="mt-4 rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
-            <div className="flex items-center gap-2">
-              <UserRoundPlus className="text-moss" />
-              <h2 className="text-xl font-black">Create your profile</h2>
-            </div>
-            <div className="mt-4 grid gap-3">
-              <Field label="First name" value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} />
-              <Field label="Last name" value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} />
-              <Field label="Phone" type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
-              <Field label="Email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-              <Field
-                label="Skills/interests"
-                placeholder="kids, setup, greeting"
-                value={form.skills}
-                onChange={(event) => setForm({ ...form, skills: event.target.value })}
-              />
-              <Field
-                label="Emergency contact"
-                value={form.emergencyContact}
-                onChange={(event) => setForm({ ...form, emergencyContact: event.target.value })}
-              />
-              <TextArea label="Notes" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
-              <label className="flex gap-3 rounded-md border border-ink/10 bg-paper p-3 text-sm font-semibold text-ink">
-                <input
-                  className="mt-1 h-5 w-5 accent-moss"
-                  type="checkbox"
-                  checked={form.consentAcknowledged}
-                  onChange={(event) => setForm({ ...form, consentAcknowledged: event.target.checked })}
+          <div className="mt-4 grid gap-4">
+            <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+              <div className="flex items-center gap-2">
+                <UserRoundPlus className="text-moss" />
+                <h2 className="text-xl font-black">Find my profile</h2>
+              </div>
+              <div className="mt-4 grid gap-3">
+                <Field
+                  label="Email"
+                  type="email"
+                  value={findProfile.email}
+                  onChange={(event) => setFindProfile({ ...findProfile, email: event.target.value })}
                 />
-                I acknowledge the volunteer consent and waiver for this event.
-              </label>
-              <Button className="bg-moss text-white" disabled={saving} onClick={saveProfile}>
-                Save Profile
-              </Button>
-            </div>
-          </section>
+                <Field
+                  label="Phone"
+                  type="tel"
+                  value={findProfile.phone}
+                  onChange={(event) => setFindProfile({ ...findProfile, phone: event.target.value })}
+                />
+                <Button className="bg-gold text-ink" disabled={saving || !findProfile.email || !findProfile.phone} onClick={findExistingProfile}>
+                  Find Profile
+                </Button>
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+              <div className="flex items-center gap-2">
+                <UserRoundPlus className="text-moss" />
+                <h2 className="text-xl font-black">Create your profile</h2>
+              </div>
+              <div className="mt-4 grid gap-3">
+                <Field label="First name" value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} />
+                <Field label="Last name" value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} />
+                <Field label="Phone" type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+                <Field label="Email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+                <Field
+                  label="Skills/interests"
+                  placeholder="kids, setup, greeting"
+                  value={form.skills}
+                  onChange={(event) => setForm({ ...form, skills: event.target.value })}
+                />
+                <Field
+                  label="Emergency contact"
+                  value={form.emergencyContact}
+                  onChange={(event) => setForm({ ...form, emergencyContact: event.target.value })}
+                />
+                <TextArea label="Notes" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
+                <label className="flex gap-3 rounded-md border border-ink/10 bg-paper p-3 text-sm font-semibold text-ink">
+                  <input
+                    className="mt-1 h-5 w-5 accent-moss"
+                    type="checkbox"
+                    checked={form.consentAcknowledged}
+                    onChange={(event) => setForm({ ...form, consentAcknowledged: event.target.checked })}
+                  />
+                  I acknowledge the volunteer consent and waiver for this event.
+                </label>
+                <Button className="bg-moss text-white" disabled={saving} onClick={saveProfile}>
+                  Save Profile
+                </Button>
+              </div>
+            </section>
+          </div>
         ) : (
           <section className="mt-4 grid gap-4">
             <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">

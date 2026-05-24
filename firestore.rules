@@ -29,6 +29,12 @@ service cloud.firestore {
       allow delete: if isSupervisorDomain();
     }
 
+    match /volunteerLookups/{lookupId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.volunteerId is string;
+      allow delete: if isSupervisorDomain();
+    }
+
     match /attendanceSessions/{sessionId} {
       allow create: if request.resource.data.volunteerTokenHash is string
         && sessionId.matches('.*_' + request.resource.data.volunteerTokenHash + '$');

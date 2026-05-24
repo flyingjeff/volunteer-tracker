@@ -118,6 +118,24 @@ export async function upsertVolunteer(
   return tokenHash;
 }
 
+export async function saveVolunteerLookup(lookupId: string, volunteerId: string) {
+  await setDoc(doc(db, "volunteerLookups", lookupId), {
+    volunteerId,
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function findVolunteerByLookup(lookupId: string) {
+  const lookup = await getDoc(doc(db, "volunteerLookups", lookupId));
+  if (!lookup.exists()) return null;
+
+  const volunteerId = String(lookup.data().volunteerId ?? "");
+  if (!volunteerId) return null;
+
+  const volunteer = await getDoc(doc(db, "volunteers", volunteerId));
+  return volunteer.exists() ? mapVolunteer(volunteer.id, volunteer.data()) : null;
+}
+
 function activeSessionId(eventId: string, siteId: string, tokenHash: string) {
   return `${eventId}_${siteId}_${tokenHash}`;
 }
