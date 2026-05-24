@@ -17,7 +17,7 @@ This MVP uses top-level collections so supervisors can query across events for r
 
 QR codes can point to `/e/{eventId}` in production. Firebase Hosting rewrites that URL to the static `/e` page, and the browser reads the event ID from the path. During local development, `/e?eventId={eventId}` also works.
 
-## `volunteers/{volunteerId}`
+## `volunteers/{volunteerTokenHash}`
 
 ```ts
 {
@@ -35,7 +35,7 @@ QR codes can point to `/e/{eventId}` in production. Firebase Hosting rewrites th
 }
 ```
 
-Volunteers do not use passwords. The app stores a random token in browser local storage and only saves its SHA-256 hash in Firestore.
+Volunteers do not use passwords. The app stores a random token in browser local storage and uses its SHA-256 hash as the volunteer document ID. That lets returning volunteers load their own profile without exposing the full volunteer collection.
 
 ## `attendanceSessions/{sessionId}`
 
@@ -44,6 +44,7 @@ Volunteers do not use passwords. The app stores a random token in browser local 
   eventId: string;
   siteId: string;
   volunteerId: string;
+  volunteerTokenHash: string;
   volunteerName: string;
   status: "checked-in" | "checked-out";
   checkedInAt: Timestamp;

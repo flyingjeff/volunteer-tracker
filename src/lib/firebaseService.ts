@@ -2,7 +2,7 @@ import {
   addDoc,
   collection,
   doc,
-  getDocs,
+  getDoc,
   limit,
   onSnapshot,
   orderBy,
@@ -96,57 +96,48 @@ function mapTaskFeedback(id: string, data: Record<string, unknown>): TaskFeedbac
 }
 
 export async function findVolunteerByTokenHash(tokenHash: string) {
-  const result = await getDocs(query(collection(db, "volunteers"), where("browserTokenHash", "==", tokenHash), limit(1)));
-  const match = result.docs[0];
-  return match ? mapVolunteer(match.id, match.data()) : null;
+  const match = await getDoc(doc(db, "volunteers", tokenHash));
+  return match.exists() ? mapVolunteer(match.id, match.data()) : null;
 }
 
 export async function upsertVolunteer(
   tokenHash: string,
   profile: Omit<VolunteerProfile, "id" | "browserTokenHash" | "createdAt" | "updatedAt">
 ) {
-  const existing = await findVolunteerByTokenHash(tokenHash);
   const payload = {
     ...profile,
     browserTokenHash: tokenHash,
     updatedAt: serverTimestamp()
   };
 
-  if (existing) {
-    await setDoc(doc(db, "volunteers", existing.id), payload, { merge: true });
-    return existing.id;
-  }
-
-  const ref = await addDoc(collection(db, "volunteers"), {
+  await setDoc(doc(db, "volunteers", tokenHash), {
     ...payload,
     createdAt: serverTimestamp()
-  });
-  return ref.id;
+  }, { merge: true });
+  return tokenHash;
 }
 
-export async function checkIn(eventId: string, siteId: string, volunteer: VolunteerProfile) {
-  const existing = await getDocs(
-    query(
-      collection(db, "attendanceSessions"),
-      where("eventId", "==", eventId),
-      where("volunteerId", "==", volunteer.id),
-      where("status", "==", "checked-in"),
-      limit(1)
-    )
-  );
+function activeSessionId(eventId: string, siteId: string, tokenHash: string) {
+  return `${eventId}_${siteId}_${tokenHash}`;
+}
 
-  if (!existing.empty) return existing.docs[0].id;
+export async function checkIn(eventId: string, siteId: string, volunteer: VolunteerProfile, tokenHash: string) {
+  const sessionRef = doc(db, "attendanceSessions", activeSessionId(eventId, siteId, tokenHash));
+  const existing = await getDoc(sessionRef);
 
-  const ref = await addDoc(collection(db, "attendanceSessions"), {
+  if (existing.exists() && existing.data().status === "checked-in") return existing.id;
+
+  await setDoc(sessionRef, {
     eventId,
     siteId,
     volunteerId: volunteer.id,
+    volunteerTokenHash: tokenHash,
     volunteerName: `${volunteer.firstName} ${volunteer.lastName}`.trim(),
     status: "checked-in",
     checkedInAt: serverTimestamp()
   });
 
-  return ref.id;
+  return sessionRef.id;
 }
 
 export async function checkOut(session: AttendanceSession) {

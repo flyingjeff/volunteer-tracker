@@ -18,13 +18,32 @@ service cloud.firestore {
     }
 
     match /volunteers/{volunteerId} {
-      allow create: if true;
-      allow read, update, delete: if isSupervisorDomain();
+      allow create: if request.resource.data.browserTokenHash == volunteerId;
+      allow read: if isSupervisorDomain()
+        || resource.data.browserTokenHash == volunteerId;
+      allow update: if isSupervisorDomain()
+        || (
+          resource.data.browserTokenHash == volunteerId
+          && request.resource.data.browserTokenHash == volunteerId
+        );
+      allow delete: if isSupervisorDomain();
     }
 
     match /attendanceSessions/{sessionId} {
-      allow create: if true;
-      allow read, update, delete: if isSupervisorDomain();
+      allow create: if request.resource.data.volunteerTokenHash is string
+        && sessionId.matches('.*_' + request.resource.data.volunteerTokenHash + '$');
+      allow read: if isSupervisorDomain()
+        || (
+          resource.data.volunteerTokenHash is string
+          && sessionId.matches('.*_' + resource.data.volunteerTokenHash + '$')
+        );
+      allow update: if isSupervisorDomain()
+        || (
+          resource.data.volunteerTokenHash is string
+          && sessionId.matches('.*_' + resource.data.volunteerTokenHash + '$')
+          && request.resource.data.volunteerTokenHash == resource.data.volunteerTokenHash
+        );
+      allow delete: if isSupervisorDomain();
     }
 
     match /tasks/{taskId} {

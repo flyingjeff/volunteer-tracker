@@ -62,6 +62,7 @@ export default function VolunteerEventPage() {
   const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
   const [moreTaskRequest, setMoreTaskRequest] = useState("");
   const [sentMessage, setSentMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     setEventId(getEventIdFromUrl());
@@ -80,7 +81,10 @@ export default function VolunteerEventPage() {
       setLoading(false);
     }
 
-    boot().catch(() => setLoading(false));
+    boot().catch((error) => {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to load volunteer profile.");
+      setLoading(false);
+    });
   }, [configured]);
 
   useEffect(() => {
@@ -107,6 +111,7 @@ export default function VolunteerEventPage() {
 
   async function saveProfile() {
     if (!form.firstName || !form.lastName || !form.consentAcknowledged) return;
+    setErrorMessage("");
     setSaving(true);
 
     const profile = {
@@ -123,85 +128,112 @@ export default function VolunteerEventPage() {
       consentAcknowledged: form.consentAcknowledged
     };
 
-    if (configured) {
-      const id = await upsertVolunteer(tokenHash, profile);
-      setVolunteer({ ...profile, id, browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
-    } else {
-      setVolunteer({ ...profile, id: "demo-local", browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
+    try {
+      if (configured) {
+        const id = await upsertVolunteer(tokenHash, profile);
+        setVolunteer({ ...profile, id, browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
+      } else {
+        setVolunteer({ ...profile, id: "demo-local", browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to save profile.");
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
   }
 
   async function handleCheckIn() {
     if (!volunteer) return;
+    setErrorMessage("");
     setSaving(true);
 
-    if (configured) {
-      await checkIn(eventId, siteId, volunteer);
-    } else {
-      setSession({
-        id: "local-session",
-        eventId,
-        siteId,
-        volunteerId: volunteer.id,
-        volunteerName: `${volunteer.firstName} ${volunteer.lastName}`,
-        status: "checked-in",
-        checkedInAt: new Date()
-      });
+    try {
+      if (configured) {
+        await checkIn(eventId, siteId, volunteer, tokenHash);
+      } else {
+        setSession({
+          id: "local-session",
+          eventId,
+          siteId,
+          volunteerId: volunteer.id,
+          volunteerName: `${volunteer.firstName} ${volunteer.lastName}`,
+          status: "checked-in",
+          checkedInAt: new Date()
+        });
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to check in.");
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
   }
 
   async function handleCheckOut() {
     if (!session) return;
+    setErrorMessage("");
     setSaving(true);
-    if (configured) await checkOut(session);
-    setSession(null);
-    setSaving(false);
+    try {
+      if (configured) await checkOut(session);
+      setSession(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to check out.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function submitTaskNote(task: VolunteerTask) {
     if (!volunteer || !taskNotes[task.id]?.trim()) return;
+    setErrorMessage("");
     setSaving(true);
 
-    if (configured) {
-      await addTaskFeedback({
-        eventId,
-        siteId,
-        volunteerId: volunteer.id,
-        volunteerName: `${volunteer.firstName} ${volunteer.lastName}`.trim(),
-        taskId: task.id,
-        taskTitle: task.title,
-        kind: "task-note",
-        message: taskNotes[task.id].trim()
-      });
-    }
+    try {
+      if (configured) {
+        await addTaskFeedback({
+          eventId,
+          siteId,
+          volunteerId: volunteer.id,
+          volunteerName: `${volunteer.firstName} ${volunteer.lastName}`.trim(),
+          taskId: task.id,
+          taskTitle: task.title,
+          kind: "task-note",
+          message: taskNotes[task.id].trim()
+        });
+      }
 
-    setTaskNotes((notes) => ({ ...notes, [task.id]: "" }));
-    setSentMessage("Note sent to supervisors.");
-    setSaving(false);
+      setTaskNotes((notes) => ({ ...notes, [task.id]: "" }));
+      setSentMessage("Note sent to supervisors.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to send note.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function requestMoreTasks() {
     if (!volunteer) return;
+    setErrorMessage("");
     setSaving(true);
 
-    if (configured) {
-      await addTaskFeedback({
-        eventId,
-        siteId,
-        volunteerId: volunteer.id,
-        volunteerName: `${volunteer.firstName} ${volunteer.lastName}`.trim(),
-        kind: "more-tasks-request",
-        message: moreTaskRequest.trim() || "I am available for another task."
-      });
-    }
+    try {
+      if (configured) {
+        await addTaskFeedback({
+          eventId,
+          siteId,
+          volunteerId: volunteer.id,
+          volunteerName: `${volunteer.firstName} ${volunteer.lastName}`.trim(),
+          kind: "more-tasks-request",
+          message: moreTaskRequest.trim() || "I am available for another task."
+        });
+      }
 
-    setMoreTaskRequest("");
-    setSentMessage("Task request sent to supervisors.");
-    setSaving(false);
+      setMoreTaskRequest("");
+      setSentMessage("Task request sent to supervisors.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to request more tasks.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (loading) {
@@ -216,6 +248,12 @@ export default function VolunteerEventPage() {
           <h1 className="mt-2 text-3xl font-black">Volunteer Check-In</h1>
           <p className="mt-2 text-sm font-medium text-white/80">Event: {eventId}</p>
         </header>
+
+        {errorMessage && (
+          <div className="mt-4 rounded-md border border-clay/30 bg-clay/10 p-3 text-sm font-semibold text-clay">
+            {errorMessage}
+          </div>
+        )}
 
         {!volunteer ? (
           <section className="mt-4 rounded-lg border border-ink/10 bg-white p-4 shadow-soft">

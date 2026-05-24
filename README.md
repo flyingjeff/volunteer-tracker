@@ -110,6 +110,8 @@ NEXT_PUBLIC_SUPERVISOR_EMAIL_DOMAIN=your-google-workspace-domain.org
 
 If these variables are missing during `npm run build`, the supervisor dashboard will show a Firebase setup required screen instead of allowing access.
 
+If Google Sign-In fails after deployment, check Firebase Console > Authentication > Settings > Authorized domains and add the Firebase Hosting domain, such as `your-project-id.web.app`.
+
 ## Google Workspace Integration Path
 
 - Supervisors use Google Sign-In now.

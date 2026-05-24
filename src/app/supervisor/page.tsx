@@ -71,6 +71,7 @@ export default function SupervisorPage() {
   const [taskForm, setTaskForm] = useState<TaskForm>(emptyTask);
   const [skillQuery, setSkillQuery] = useState("");
   const [copiedEventId, setCopiedEventId] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [savingEvent, setSavingEvent] = useState(false);
   const setupComplete = configured && Boolean(supervisorDomain);
@@ -145,11 +146,17 @@ export default function SupervisorPage() {
 
   async function handleSignIn() {
     if (!setupComplete) return;
-    await signInWithPopup(auth, googleProvider);
+    setErrorMessage("");
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to sign in with Google.");
+    }
   }
 
   async function handleSaveTask() {
     if (!taskForm.title.trim() || !selectedEventId) return;
+    setErrorMessage("");
     setSaving(true);
     const payload = {
       id: taskForm.id,
@@ -163,31 +170,46 @@ export default function SupervisorPage() {
         .filter(Boolean)
     };
 
-    if (hasSupervisorAccess) await saveTask(payload);
-
-    setTaskForm(emptyTask);
-    setSaving(false);
+    try {
+      if (hasSupervisorAccess) await saveTask(payload);
+      setTaskForm(emptyTask);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to save task.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleSaveEvent() {
     if (!eventForm.name.trim() || !eventForm.location.trim() || !eventForm.startsAt) return;
+    setErrorMessage("");
     setSavingEvent(true);
-    const eventId = await saveEvent({
-      id: eventForm.id,
-      name: eventForm.name.trim(),
-      location: eventForm.location.trim(),
-      startsAt: new Date(eventForm.startsAt),
-      active: eventForm.active
-    });
-    setSelectedEventId(eventId);
-    setEventForm(emptyEvent);
-    setSavingEvent(false);
+    try {
+      const eventId = await saveEvent({
+        id: eventForm.id,
+        name: eventForm.name.trim(),
+        location: eventForm.location.trim(),
+        startsAt: new Date(eventForm.startsAt),
+        active: eventForm.active
+      });
+      setSelectedEventId(eventId);
+      setEventForm(emptyEvent);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to save event.");
+    } finally {
+      setSavingEvent(false);
+    }
   }
 
   async function updateTask(task: VolunteerTask, changes: Partial<VolunteerTask>) {
     const next = { ...task, ...changes };
-    if (hasSupervisorAccess) await saveTask(next);
-    setTasks((items) => items.map((item) => (item.id === task.id ? next : item)));
+    setErrorMessage("");
+    try {
+      if (hasSupervisorAccess) await saveTask(next);
+      setTasks((items) => items.map((item) => (item.id === task.id ? next : item)));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to update task.");
+    }
   }
 
   function exportCsv() {
@@ -247,6 +269,12 @@ export default function SupervisorPage() {
             <span className="rounded-md bg-gold px-3 py-2 text-sm font-black text-ink">Setup required</span>
           )}
         </header>
+
+        {errorMessage && (
+          <div className="mt-4 rounded-md border border-clay/30 bg-clay/10 p-3 text-sm font-semibold text-clay">
+            {errorMessage}
+          </div>
+        )}
 
         {!setupComplete ? (
           <section className="mt-6 rounded-lg border border-ink/10 bg-white p-6 text-center shadow-soft">
