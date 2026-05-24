@@ -30,7 +30,7 @@ export default function HomePage() {
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <Link
-                href="/e/demo-sunday"
+                href="/e?eventId=demo-sunday"
                 className="focus-ring inline-flex items-center justify-center gap-2 rounded-md bg-moss px-5 py-3 font-bold text-white shadow-soft"
               >
                 <QrCode size={19} />

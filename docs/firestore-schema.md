@@ -15,7 +15,7 @@ This MVP uses top-level collections so supervisors can query across events for r
 }
 ```
 
-QR codes should point to `/e/{eventId}`. For multiple worksites under one event, add `siteId` query or route support later.
+QR codes can point to `/e/{eventId}` in production. Firebase Hosting rewrites that URL to the static `/e` page, and the browser reads the event ID from the path. During local development, `/e?eventId={eventId}` also works.
 
 ## `volunteers/{volunteerId}`
 
@@ -76,8 +76,10 @@ Create composite indexes when Firebase prompts:
 - `attendanceSessions`: `eventId ASC`, `checkedInAt DESC`
 - `tasks`: `eventId ASC`, `createdAt DESC`
 
-## Google Workspace Extensions
+## Spark-Safe Google Workspace Path
 
-- Google Sheets export: use the dashboard CSV export now, or add a Firebase Cloud Function with the Google Sheets API for one-click sync.
-- Gmail notifications: trigger Cloud Functions on task assignment or event creation.
-- Google Calendar: store `googleCalendarEventId` on `events/{eventId}` and sync schedules through a Cloud Function.
+- Google Sheets export: use the dashboard CSV export and import the file into Google Sheets.
+- Gmail notifications: keep manual for Spark, or use a separate no-code automation tool later.
+- Google Calendar: store event details in Firestore now; automatic sync should wait for a backend integration.
+
+Avoid Cloud Functions if the project must stay on Firebase Spark.

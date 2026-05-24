@@ -16,14 +16,39 @@ docs/firestore-schema.md         Data model and index notes
 firestore.rules                  Starter Firestore security rules
 public/manifest.webmanifest      PWA manifest
 public/sw.js                     Basic service worker
+firebase.json                    Spark-compatible static Firebase Hosting config
 ```
 
 ## MVP Pages
 
-- `/e/demo-sunday`: volunteer profile, check-in, check-out, assigned tasks.
+- `/e?eventId=demo-sunday`: volunteer profile, check-in, check-out, assigned tasks.
+- `/e/demo-sunday`: production QR-friendly URL supported by Firebase Hosting rewrite.
 - `/supervisor`: Google Sign-In, live attendance, task creation, Kanban board, assignments, skills search, attendance history, CSV export.
 
 The app runs in demo mode until Firebase environment variables are present.
+
+## Firebase Spark Plan Compatibility
+
+This MVP is designed to run on the Firebase Spark plan.
+
+Use on Spark:
+
+- Firebase Authentication with Google Sign-In for supervisors.
+- Firestore for volunteers, attendance sessions, events, and tasks.
+- Firebase Hosting as a static site from the `out` folder.
+- Client-side realtime Firestore listeners.
+- CSV export for Google Sheets import.
+
+Avoid on Spark:
+
+- Cloud Functions.
+- Next.js server rendering on Firebase.
+- Automatic Google Sheets API sync from a server.
+- Automatic Gmail sending.
+- Automatic Google Calendar sync.
+- Phone/SMS authentication.
+
+Google Workspace automation can be added later, but the Spark-safe version is CSV export plus manual import into Google Sheets.
 
 ## Firebase Setup
 
@@ -47,29 +72,29 @@ Open `http://localhost:3000`.
 
 ## Deployment
 
-### Vercel
-
-1. Push this repository to GitHub.
-2. Import it into Vercel.
-3. Add the same environment variables from `.env.local`.
-4. Deploy.
-
-### Firebase Hosting
+### Firebase Hosting on Spark
 
 ```bash
 npm install -g firebase-tools
 firebase login
-firebase init hosting
 npm run build
 firebase deploy
 ```
 
-For Firebase Hosting with Next.js server rendering, enable the Firebase web frameworks option during `firebase init hosting`.
+Before deploy:
+
+1. Copy `.firebaserc.example` to `.firebaserc`.
+2. Replace `your-firebase-project-id` with the Firebase project ID.
+3. Add the Firebase web app environment variables locally.
+4. Run `npm run build`, which writes the static site to `out`.
+5. Run `firebase deploy`.
+
+Do not enable Firebase web frameworks or Next.js server rendering for the Spark deployment. The included `firebase.json` deploys static files only.
 
 ## Google Workspace Integration Path
 
 - Supervisors use Google Sign-In now.
 - CSV attendance export is included for Google Sheets import.
-- A production Sheets integration should use a Firebase Cloud Function with a Google service account.
-- Gmail notifications can be sent from Cloud Functions when a task is assigned or completed.
-- Google Calendar scheduling can be added by storing Calendar event IDs on Firestore `events`.
+- A future automatic Sheets integration would likely require Cloud Functions or another backend.
+- Gmail notifications should stay manual or use an external tool while staying on Spark.
+- Google Calendar scheduling can be tracked manually in Firestore now; automatic sync is a future backend integration.

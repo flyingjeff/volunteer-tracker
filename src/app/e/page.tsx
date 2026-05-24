@@ -31,8 +31,17 @@ const emptyForm: FormState = {
   consentAcknowledged: false
 };
 
-export default function VolunteerEventPage({ params }: { params: { eventId: string } }) {
-  const eventId = params.eventId;
+function getEventIdFromUrl() {
+  if (typeof window === "undefined") return "demo-sunday";
+  const params = new URLSearchParams(window.location.search);
+  const queryEvent = params.get("eventId") || params.get("event");
+  if (queryEvent) return queryEvent;
+  const [, route, eventId] = window.location.pathname.split("/");
+  return route === "e" && eventId ? decodeURIComponent(eventId) : "demo-sunday";
+}
+
+export default function VolunteerEventPage() {
+  const [eventId, setEventId] = useState("demo-sunday");
   const siteId = "main";
   const configured = isFirebaseConfigured();
   const [loading, setLoading] = useState(true);
@@ -42,6 +51,10 @@ export default function VolunteerEventPage({ params }: { params: { eventId: stri
   const [session, setSession] = useState<AttendanceSession | null>(null);
   const [tasks, setTasks] = useState<VolunteerTask[]>(configured ? [] : demoTasks);
   const [form, setForm] = useState<FormState>(emptyForm);
+
+  useEffect(() => {
+    setEventId(getEventIdFromUrl());
+  }, []);
 
   useEffect(() => {
     async function boot() {
