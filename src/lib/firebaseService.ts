@@ -123,9 +123,6 @@ function activeSessionId(eventId: string, siteId: string, tokenHash: string) {
 
 export async function checkIn(eventId: string, siteId: string, volunteer: VolunteerProfile, tokenHash: string) {
   const sessionRef = doc(db, "attendanceSessions", activeSessionId(eventId, siteId, tokenHash));
-  const existing = await getDoc(sessionRef);
-
-  if (existing.exists() && existing.data().status === "checked-in") return existing.id;
 
   await setDoc(sessionRef, {
     eventId,
@@ -135,7 +132,7 @@ export async function checkIn(eventId: string, siteId: string, volunteer: Volunt
     volunteerName: `${volunteer.firstName} ${volunteer.lastName}`.trim(),
     status: "checked-in",
     checkedInAt: serverTimestamp()
-  });
+  }, { merge: true });
 
   return sessionRef.id;
 }

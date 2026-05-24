@@ -33,10 +33,7 @@ service cloud.firestore {
       allow create: if request.resource.data.volunteerTokenHash is string
         && sessionId.matches('.*_' + request.resource.data.volunteerTokenHash + '$');
       allow read: if isSupervisorDomain()
-        || (
-          resource.data.volunteerTokenHash is string
-          && sessionId.matches('.*_' + resource.data.volunteerTokenHash + '$')
-        );
+        || sessionId.matches('.*_[0-9a-f]{64}$');
       allow update: if isSupervisorDomain()
         || (
           resource.data.volunteerTokenHash is string
