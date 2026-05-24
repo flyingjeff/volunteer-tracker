@@ -23,7 +23,7 @@ firebase.json                    Spark-compatible static Firebase Hosting config
 
 - `/e?eventId=demo-sunday`: volunteer profile, check-in, check-out, assigned tasks, task notes, and more-task requests.
 - `/e/demo-sunday`: production QR-friendly URL supported by Firebase Hosting rewrite.
-- `/supervisor`: Google Sign-In, event creation, QR link management, live attendance, task creation, Kanban board, assignments, volunteer notes/requests, skills search, attendance history, CSV export.
+- `/supervisor`: Google Sign-In, event creation, QR link management, live attendance, task creation, Kanban board, assignments, volunteer notes/requests, skills search, attendance history, activity log, and CSV exports.
 
 ## Firebase Spark Plan Compatibility
 
@@ -32,10 +32,10 @@ This MVP is designed to run on the Firebase Spark plan.
 Use on Spark:
 
 - Firebase Authentication with Google Sign-In for supervisors.
-- Firestore for volunteers, attendance sessions, events, and tasks.
+- Firestore for volunteers, attendance sessions, activity logs, events, and tasks.
 - Firebase Hosting as a static site from the `out` folder.
 - Client-side realtime Firestore listeners.
-- CSV export for Google Sheets import.
+- CSV export for Google Sheets import, including attendance, activity, and task assignment reports.
 
 Avoid on Spark:
 
@@ -116,7 +116,7 @@ If Google Sign-In fails after deployment, check Firebase Console > Authenticatio
 
 - Supervisors use Google Sign-In now.
 - Supervisors create each event in the dashboard, copy its QR link, and manage event-specific tasks and attendance.
-- CSV attendance export is included for Google Sheets import.
+- CSV exports are included for Google Sheets import: attendance history, volunteer activity, and task assignments.
 - A future automatic Sheets integration would likely require Cloud Functions or another backend.
 - Gmail notifications should stay manual or use an external tool while staying on Spark.
 - Google Calendar scheduling can be tracked manually in Firestore now; automatic sync is a future backend integration.

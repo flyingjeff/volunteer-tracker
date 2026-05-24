@@ -100,6 +100,24 @@ Volunteers can create task feedback without signing in. Supervisors can read the
 
 Volunteers can also add themselves to an in-progress task. Firestore rules restrict anonymous task updates to `assignedVolunteerIds` and `updatedAt`, so task details and status stay supervisor-controlled.
 
+## `activityLogs/{activityId}`
+
+```ts
+{
+  eventId: string;
+  siteId: string;
+  kind: "check-in" | "check-out" | "task-assigned" | "task-unassigned" | "task-joined";
+  volunteerId?: string;
+  volunteerName?: string;
+  taskId?: string;
+  taskTitle?: string;
+  message: string;
+  createdAt: Timestamp;
+}
+```
+
+The app writes this export-friendly ledger whenever a volunteer checks in, checks out, joins an open task, or is assigned/unassigned by a supervisor. Supervisors can export the activity log as CSV from the attendance view.
+
 ## Index Notes
 
 The MVP avoids composite-index requirements for the event task board by querying each event and sorting the small result sets in the browser. If the app later needs larger reports or cross-event filtering, add composite indexes when Firebase prompts.

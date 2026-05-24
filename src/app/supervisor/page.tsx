@@ -7,10 +7,12 @@ import { Button, Field, TextArea } from "@/components/ui";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { auth, googleProvider, isFirebaseConfigured } from "@/lib/firebase";
 import {
+  addActivityLog,
   deleteEvent,
   deleteTask,
   saveEvent,
   saveTask,
+  watchActivityLogs,
   watchAttendanceHistory,
   watchEvents,
   watchLiveAttendance,
@@ -18,7 +20,7 @@ import {
   watchTasks,
   watchVolunteers
 } from "@/lib/firebaseService";
-import type { AttendanceSession, EventSite, TaskFeedback, TaskStatus, VolunteerProfile, VolunteerTask } from "@/lib/types";
+import type { ActivityLog, AttendanceSession, EventSite, TaskFeedback, TaskStatus, VolunteerProfile, VolunteerTask } from "@/lib/types";
 
 const siteId = "main";
 
@@ -66,6 +68,7 @@ export default function SupervisorPage() {
   const [history, setHistory] = useState<AttendanceSession[]>([]);
   const [tasks, setTasks] = useState<VolunteerTask[]>([]);
   const [feedback, setFeedback] = useState<TaskFeedback[]>([]);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [volunteers, setVolunteers] = useState<VolunteerProfile[]>([]);
   const [events, setEvents] = useState<EventSite[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
@@ -114,6 +117,7 @@ export default function SupervisorPage() {
       setHistory([]);
       setTasks([]);
       setFeedback([]);
+      setActivityLogs([]);
       return;
     }
 
@@ -121,12 +125,14 @@ export default function SupervisorPage() {
     const unsubHistory = watchAttendanceHistory(selectedEventId, setHistory);
     const unsubTasks = watchTasks(selectedEventId, setTasks);
     const unsubFeedback = watchTaskFeedback(selectedEventId, setFeedback);
+    const unsubActivityLogs = watchActivityLogs(selectedEventId, setActivityLogs);
 
     return () => {
       unsubAttendance();
       unsubHistory();
       unsubTasks();
       unsubFeedback();
+      unsubActivityLogs();
     };
   }, [hasSupervisorAccess, selectedEventId]);
 
@@ -206,15 +212,59 @@ export default function SupervisorPage() {
     const next = { ...task, ...changes };
     setErrorMessage("");
     try {
-      if (hasSupervisorAccess) await saveTask(next);
+      if (hasSupervisorAccess) {
+        await saveTask(next);
+
+        if (changes.assignedVolunteerIds) {
+          await logAssignmentChanges(task, changes.assignedVolunteerIds);
+        }
+      }
       setTasks((items) => items.map((item) => (item.id === task.id ? next : item)));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to update task.");
     }
   }
 
-  function exportCsv() {
-    const rows = [
+  async function logAssignmentChanges(task: VolunteerTask, nextVolunteerIds: string[]) {
+    const previous = new Set(task.assignedVolunteerIds);
+    const next = new Set(nextVolunteerIds);
+    const added = nextVolunteerIds.filter((id) => !previous.has(id));
+    const removed = task.assignedVolunteerIds.filter((id) => !next.has(id));
+    const changes = [
+      ...added.map((volunteerId) => ({ volunteerId, kind: "task-assigned" as const })),
+      ...removed.map((volunteerId) => ({ volunteerId, kind: "task-unassigned" as const }))
+    ];
+
+    await Promise.all(
+      changes.map(({ volunteerId, kind }) => {
+        const volunteer = volunteers.find((item) => item.id === volunteerId);
+        const name = volunteer ? `${volunteer.firstName} ${volunteer.lastName}`.trim() : volunteerId;
+        return addActivityLog({
+          eventId: task.eventId,
+          siteId: task.siteId,
+          kind,
+          volunteerId,
+          volunteerName: name,
+          taskId: task.id,
+          taskTitle: task.title,
+          message: `${name} was ${kind === "task-assigned" ? "assigned to" : "removed from"} ${task.title}.`
+        });
+      })
+    );
+  }
+
+  function downloadCsv(filename: string, rows: string[][]) {
+    const csv = rows.map((row) => row.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportAttendanceCsv() {
+    downloadCsv(`${selectedEventId || "event"}-attendance.csv`, [
       ["Volunteer", "Event", "Status", "Checked in", "Checked out", "Minutes"],
       ...history.map((item) => [
         item.volunteerName,
@@ -224,14 +274,42 @@ export default function SupervisorPage() {
         item.checkedOutAt?.toISOString() ?? "",
         String(item.totalMinutes ?? "")
       ])
-    ];
-    const csv = rows.map((row) => row.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${selectedEventId || "event"}-attendance.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    ]);
+  }
+
+  function exportAssignmentsCsv() {
+    const volunteerById = new Map(volunteers.map((volunteer) => [volunteer.id, volunteer]));
+    downloadCsv(`${selectedEventId || "event"}-task-assignments.csv`, [
+      ["Event", "Task", "Status", "Volunteer", "Volunteer email", "Volunteer phone", "Skill tags"],
+      ...tasks.flatMap((task) =>
+        task.assignedVolunteerIds.map((volunteerId) => {
+          const volunteer = volunteerById.get(volunteerId);
+          return [
+            selectedEvent?.name ?? task.eventId,
+            task.title,
+            task.status,
+            volunteer ? `${volunteer.firstName} ${volunteer.lastName}`.trim() : volunteerId,
+            volunteer?.email ?? "",
+            volunteer?.phone ?? "",
+            task.skillTags.join("; ")
+          ];
+        })
+      )
+    ]);
+  }
+
+  function exportActivityCsv() {
+    downloadCsv(`${selectedEventId || "event"}-activity.csv`, [
+      ["Timestamp", "Event", "Activity", "Volunteer", "Task", "Message"],
+      ...activityLogs.map((item) => [
+        item.createdAt.toISOString(),
+        selectedEvent?.name ?? item.eventId,
+        item.kind,
+        item.volunteerName ?? "",
+        item.taskTitle ?? "",
+        item.message
+      ])
+    ]);
   }
 
   function getQrLink(eventId: string) {
@@ -518,7 +596,13 @@ export default function SupervisorPage() {
                 {activeView === "tasks" && (
                   <>
                     <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
-                      <h2 className="text-xl font-black">Task management</h2>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <h2 className="text-xl font-black">Task management</h2>
+                        <Button className="bg-paper text-ink" disabled={!selectedEventId || tasks.length === 0} onClick={exportAssignmentsCsv}>
+                          <Download size={17} />
+                          Assignments CSV
+                        </Button>
+                      </div>
                       <div className="mt-4 grid gap-3 lg:grid-cols-[0.8fr_1.2fr]">
                         <div className="grid gap-3 rounded-md border border-ink/10 bg-paper p-3">
                           <Field label="Task title" value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} />
@@ -589,10 +673,16 @@ export default function SupervisorPage() {
                             <UsersRound className="text-moss" />
                             <h2 className="text-xl font-black">Live attendance</h2>
                           </div>
-                          <Button className="bg-paper text-ink" disabled={!selectedEventId} onClick={exportCsv}>
-                            <Download size={17} />
-                            CSV
-                          </Button>
+                          <div className="flex flex-wrap gap-2">
+                            <Button className="bg-paper text-ink" disabled={!selectedEventId} onClick={exportAttendanceCsv}>
+                              <Download size={17} />
+                              Attendance CSV
+                            </Button>
+                            <Button className="bg-paper text-ink" disabled={!selectedEventId || activityLogs.length === 0} onClick={exportActivityCsv}>
+                              <Download size={17} />
+                              Activity CSV
+                            </Button>
+                          </div>
                         </div>
                         <div className="mt-4 grid gap-3">
                           {attendance.map((item) => (
@@ -630,6 +720,36 @@ export default function SupervisorPage() {
                             </tbody>
                           </table>
                         </div>
+                      </div>
+                    </section>
+
+                    <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+                      <h2 className="text-xl font-black">Activity log</h2>
+                      <div className="mt-4 grid gap-3">
+                        {activityLogs.length === 0 ? (
+                          <div className="rounded-md border border-ink/10 bg-paper p-3 text-sm font-semibold text-ink/65">
+                            No check-in, check-out, or assignment activity yet.
+                          </div>
+                        ) : (
+                          activityLogs.slice(0, 12).map((item) => (
+                            <article key={item.id} className="rounded-md border border-ink/10 bg-paper p-3">
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                  <h3 className="font-black">{item.volunteerName ?? item.kind}</h3>
+                                  <p className="mt-1 text-sm font-semibold text-ink/65">{item.message}</p>
+                                </div>
+                                <span className="text-xs font-bold uppercase tracking-[0.12em] text-ink/45">
+                                  {item.createdAt.toLocaleString([], {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "numeric",
+                                    minute: "2-digit"
+                                  })}
+                                </span>
+                              </div>
+                            </article>
+                          ))
+                        )}
                       </div>
                     </section>
                   </>

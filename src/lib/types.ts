@@ -73,3 +73,18 @@ export type TaskFeedback = {
   message: string;
   createdAt: Date;
 };
+
+export type ActivityLogKind = "check-in" | "check-out" | "task-assigned" | "task-unassigned" | "task-joined";
+
+export type ActivityLog = {
+  id: string;
+  eventId: string;
+  siteId: string;
+  kind: ActivityLogKind;
+  volunteerId?: string;
+  volunteerName?: string;
+  taskId?: string;
+  taskTitle?: string;
+  message: string;
+  createdAt: Date;
+};

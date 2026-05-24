@@ -16,7 +16,7 @@ import {
   deleteDoc
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { AttendanceSession, EventSite, TaskFeedback, VolunteerProfile, VolunteerTask } from "@/lib/types";
+import type { ActivityLog, AttendanceSession, EventSite, TaskFeedback, VolunteerProfile, VolunteerTask } from "@/lib/types";
 
 function toDate(value: unknown) {
   return value instanceof Timestamp ? value.toDate() : value instanceof Date ? value : new Date();
@@ -96,6 +96,33 @@ function mapTaskFeedback(id: string, data: Record<string, unknown>): TaskFeedbac
   };
 }
 
+function mapActivityLog(id: string, data: Record<string, unknown>): ActivityLog {
+  const kind = String(data.kind ?? "");
+
+  return {
+    id,
+    eventId: String(data.eventId ?? ""),
+    siteId: String(data.siteId ?? ""),
+    kind:
+      kind === "check-out" ||
+      kind === "task-assigned" ||
+      kind === "task-unassigned" ||
+      kind === "task-joined"
+        ? kind
+        : "check-in",
+    volunteerId: data.volunteerId ? String(data.volunteerId) : undefined,
+    volunteerName: data.volunteerName ? String(data.volunteerName) : undefined,
+    taskId: data.taskId ? String(data.taskId) : undefined,
+    taskTitle: data.taskTitle ? String(data.taskTitle) : undefined,
+    message: String(data.message ?? ""),
+    createdAt: toDate(data.createdAt)
+  };
+}
+
+function volunteerName(volunteer: Pick<VolunteerProfile, "firstName" | "lastName">) {
+  return `${volunteer.firstName} ${volunteer.lastName}`.trim();
+}
+
 export async function findVolunteerByTokenHash(tokenHash: string) {
   const match = await getDoc(doc(db, "volunteers", tokenHash));
   return match.exists() ? mapVolunteer(match.id, match.data()) : null;
@@ -142,16 +169,26 @@ function activeSessionId(eventId: string, siteId: string, tokenHash: string) {
 
 export async function checkIn(eventId: string, siteId: string, volunteer: VolunteerProfile, tokenHash: string) {
   const sessionRef = doc(db, "attendanceSessions", activeSessionId(eventId, siteId, tokenHash));
+  const name = volunteerName(volunteer);
 
   await setDoc(sessionRef, {
     eventId,
     siteId,
     volunteerId: volunteer.id,
     volunteerTokenHash: tokenHash,
-    volunteerName: `${volunteer.firstName} ${volunteer.lastName}`.trim(),
+    volunteerName: name,
     status: "checked-in",
     checkedInAt: serverTimestamp()
   }, { merge: true });
+
+  await addActivityLog({
+    eventId,
+    siteId,
+    kind: "check-in",
+    volunteerId: volunteer.id,
+    volunteerName: name,
+    message: `${name} checked in.`
+  });
 
   return sessionRef.id;
 }
@@ -163,6 +200,15 @@ export async function checkOut(session: AttendanceSession) {
     status: "checked-out",
     checkedOutAt,
     totalMinutes
+  });
+
+  await addActivityLog({
+    eventId: session.eventId,
+    siteId: session.siteId,
+    kind: "check-out",
+    volunteerId: session.volunteerId,
+    volunteerName: session.volunteerName,
+    message: `${session.volunteerName} checked out after ${totalMinutes} minute${totalMinutes === 1 ? "" : "s"}.`
   });
 }
 
@@ -255,10 +301,23 @@ export async function deleteTask(taskId: string) {
   await deleteDoc(doc(db, "tasks", taskId));
 }
 
-export async function joinTask(taskId: string, volunteerId: string) {
-  await updateDoc(doc(db, "tasks", taskId), {
-    assignedVolunteerIds: arrayUnion(volunteerId),
+export async function joinTask(task: VolunteerTask, volunteer: VolunteerProfile) {
+  const name = volunteerName(volunteer);
+
+  await updateDoc(doc(db, "tasks", task.id), {
+    assignedVolunteerIds: arrayUnion(volunteer.id),
     updatedAt: serverTimestamp()
+  });
+
+  await addActivityLog({
+    eventId: task.eventId,
+    siteId: task.siteId,
+    kind: "task-joined",
+    volunteerId: volunteer.id,
+    volunteerName: name,
+    taskId: task.id,
+    taskTitle: task.title,
+    message: `${name} added themselves to ${task.title}.`
   });
 }
 
@@ -308,5 +367,20 @@ export function watchTaskFeedback(eventId: string, callback: (feedback: TaskFeed
   return onSnapshot(
     query(collection(db, "taskFeedback"), where("eventId", "==", eventId), limit(75)),
     (snapshot) => callback(snapshot.docs.map((item) => mapTaskFeedback(item.id, item.data())).sort(byNewestDate))
+  );
+}
+
+export async function addActivityLog(log: Omit<ActivityLog, "id" | "createdAt">) {
+  const ref = await addDoc(collection(db, "activityLogs"), {
+    ...log,
+    createdAt: serverTimestamp()
+  });
+  return ref.id;
+}
+
+export function watchActivityLogs(eventId: string, callback: (logs: ActivityLog[]) => void) {
+  return onSnapshot(
+    query(collection(db, "activityLogs"), where("eventId", "==", eventId), limit(250)),
+    (snapshot) => callback(snapshot.docs.map((item) => mapActivityLog(item.id, item.data())).sort(byNewestDate))
   );
 }

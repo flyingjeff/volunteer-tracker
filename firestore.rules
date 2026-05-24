@@ -67,5 +67,19 @@ service cloud.firestore {
       allow create: if true;
       allow read, update, delete: if isSupervisorDomain();
     }
+
+    match /activityLogs/{activityId} {
+      allow create: if request.resource.data.eventId is string
+        && request.resource.data.siteId is string
+        && (
+          request.resource.data.kind == 'check-in'
+          || request.resource.data.kind == 'check-out'
+          || request.resource.data.kind == 'task-assigned'
+          || request.resource.data.kind == 'task-unassigned'
+          || request.resource.data.kind == 'task-joined'
+        )
+        && request.resource.data.message is string;
+      allow read, update, delete: if isSupervisorDomain();
+    }
   }
 }

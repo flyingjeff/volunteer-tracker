@@ -354,7 +354,7 @@ export default function VolunteerEventPage() {
 
     try {
       if (configured) {
-        await joinTask(task.id, volunteer.id);
+        await joinTask(task, volunteer);
       }
       setSentMessage(`You were added to ${task.title}.`);
     } catch (error) {
