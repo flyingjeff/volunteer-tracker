@@ -9,13 +9,14 @@ import {
   checkOut,
   findVolunteerByTokenHash,
   upsertVolunteer,
-  watchLiveAttendance,
+  watchEvent,
+  watchVolunteerAttendanceSession,
   watchTasks
 } from "@/lib/firebaseService";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { getOrCreateBrowserToken, sha256 } from "@/lib/token";
 import { demoAttendance, demoTasks } from "@/lib/mockData";
-import type { AttendanceSession, VolunteerProfile, VolunteerTask } from "@/lib/types";
+import type { AttendanceSession, EventSite, VolunteerProfile, VolunteerTask } from "@/lib/types";
 
 type FormState = {
   firstName: string;
@@ -55,6 +56,7 @@ export default function VolunteerEventPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [tokenHash, setTokenHash] = useState("");
+  const [eventDetails, setEventDetails] = useState<EventSite | null>(null);
   const [volunteer, setVolunteer] = useState<VolunteerProfile | null>(null);
   const [session, setSession] = useState<AttendanceSession | null>(null);
   const [tasks, setTasks] = useState<VolunteerTask[]>(configured ? [] : demoTasks);
@@ -93,16 +95,19 @@ export default function VolunteerEventPage() {
       return;
     }
 
-    const unwatchAttendance = watchLiveAttendance(eventId, (items) => {
-      setSession((current) => items.find((item) => item.volunteerId === volunteer?.id) ?? current);
-    });
+    const unwatchEvent = watchEvent(eventId, setEventDetails);
     const unwatchTasks = watchTasks(eventId, setTasks);
+    const unwatchAttendance =
+      tokenHash && volunteer
+        ? watchVolunteerAttendanceSession(eventId, siteId, tokenHash, setSession)
+        : () => undefined;
 
     return () => {
+      unwatchEvent();
       unwatchAttendance();
       unwatchTasks();
     };
-  }, [configured, eventId, volunteer?.id]);
+  }, [configured, eventId, tokenHash, volunteer]);
 
   const assignedTasks = useMemo(
     () => tasks.filter((task) => volunteer && task.assignedVolunteerIds.includes(volunteer.id)),
@@ -246,7 +251,10 @@ export default function VolunteerEventPage() {
         <header className="rounded-lg bg-moss p-5 text-white shadow-soft">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/75">Su Presencia Church</p>
           <h1 className="mt-2 text-3xl font-black">Volunteer Check-In</h1>
-          <p className="mt-2 text-sm font-medium text-white/80">Event: {eventId}</p>
+          <p className="mt-2 text-sm font-medium text-white/80">
+            {eventDetails?.name ?? eventId}
+            {eventDetails?.location ? ` | ${eventDetails.location}` : ""}
+          </p>
         </header>
 
         {errorMessage && (

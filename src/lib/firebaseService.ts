@@ -150,29 +150,58 @@ export async function checkOut(session: AttendanceSession) {
   });
 }
 
+function byNewestDate<T extends { createdAt?: Date; checkedInAt?: Date }>(a: T, b: T) {
+  const aDate = a.createdAt ?? a.checkedInAt ?? new Date(0);
+  const bDate = b.createdAt ?? b.checkedInAt ?? new Date(0);
+  return bDate.getTime() - aDate.getTime();
+}
+
+export function watchEvent(eventId: string, callback: (event: EventSite | null) => void) {
+  return onSnapshot(doc(db, "events", eventId), (snapshot) =>
+    callback(snapshot.exists() ? mapEvent(snapshot.id, snapshot.data()) : null)
+  );
+}
+
+export function watchVolunteerAttendanceSession(
+  eventId: string,
+  siteId: string,
+  tokenHash: string,
+  callback: (session: AttendanceSession | null) => void
+) {
+  return onSnapshot(doc(db, "attendanceSessions", activeSessionId(eventId, siteId, tokenHash)), (snapshot) => {
+    if (!snapshot.exists() || snapshot.data().status !== "checked-in") {
+      callback(null);
+      return;
+    }
+
+    callback(mapAttendance(snapshot.id, snapshot.data()));
+  });
+}
+
 export function watchLiveAttendance(eventId: string, callback: (sessions: AttendanceSession[]) => void) {
   return onSnapshot(
-    query(
-      collection(db, "attendanceSessions"),
-      where("eventId", "==", eventId),
-      where("status", "==", "checked-in"),
-      orderBy("checkedInAt", "desc")
-    ),
-    (snapshot) => callback(snapshot.docs.map((item) => mapAttendance(item.id, item.data())))
+    query(collection(db, "attendanceSessions"), where("eventId", "==", eventId)),
+    (snapshot) =>
+      callback(
+        snapshot.docs
+          .map((item) => mapAttendance(item.id, item.data()))
+          .filter((item) => item.status === "checked-in")
+          .sort(byNewestDate)
+      )
   );
 }
 
 export function watchAttendanceHistory(eventId: string, callback: (sessions: AttendanceSession[]) => void) {
   return onSnapshot(
-    query(collection(db, "attendanceSessions"), where("eventId", "==", eventId), orderBy("checkedInAt", "desc"), limit(75)),
-    (snapshot) => callback(snapshot.docs.map((item) => mapAttendance(item.id, item.data())))
+    query(collection(db, "attendanceSessions"), where("eventId", "==", eventId), limit(75)),
+    (snapshot) => callback(snapshot.docs.map((item) => mapAttendance(item.id, item.data())).sort(byNewestDate))
   );
 }
 
 export function watchTasks(eventId: string, callback: (tasks: VolunteerTask[]) => void) {
   return onSnapshot(
-    query(collection(db, "tasks"), where("eventId", "==", eventId), orderBy("createdAt", "desc")),
-    (snapshot) => callback(snapshot.docs.map((item) => mapTask(item.id, item.data())))
+    query(collection(db, "tasks"), where("eventId", "==", eventId)),
+    (snapshot) => callback(snapshot.docs.map((item) => mapTask(item.id, item.data())).sort(byNewestDate))
   );
 }
 
@@ -254,7 +283,7 @@ export async function addTaskFeedback(
 
 export function watchTaskFeedback(eventId: string, callback: (feedback: TaskFeedback[]) => void) {
   return onSnapshot(
-    query(collection(db, "taskFeedback"), where("eventId", "==", eventId), orderBy("createdAt", "desc"), limit(75)),
-    (snapshot) => callback(snapshot.docs.map((item) => mapTaskFeedback(item.id, item.data())))
+    query(collection(db, "taskFeedback"), where("eventId", "==", eventId), limit(75)),
+    (snapshot) => callback(snapshot.docs.map((item) => mapTaskFeedback(item.id, item.data())).sort(byNewestDate))
   );
 }

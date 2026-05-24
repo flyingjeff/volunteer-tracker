@@ -87,15 +87,9 @@ Volunteers do not use passwords. The app stores a random token in browser local 
 
 Volunteers can create task feedback without signing in. Supervisors can read the feedback stream for the selected event.
 
-## Recommended Indexes
+## Index Notes
 
-Create composite indexes when Firebase prompts:
-
-- `events`: `startsAt DESC`
-- `attendanceSessions`: `eventId ASC`, `status ASC`, `checkedInAt DESC`
-- `attendanceSessions`: `eventId ASC`, `checkedInAt DESC`
-- `tasks`: `eventId ASC`, `createdAt DESC`
-- `taskFeedback`: `eventId ASC`, `createdAt DESC`
+The MVP avoids composite-index requirements for the event task board by querying each event and sorting the small result sets in the browser. If the app later needs larger reports or cross-event filtering, add composite indexes when Firebase prompts.
 
 ## Spark-Safe Google Workspace Path
 
