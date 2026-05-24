@@ -8,6 +8,7 @@ import {
   checkIn,
   checkOut,
   findVolunteerByTokenHash,
+  joinTask,
   upsertVolunteer,
   watchEvent,
   watchVolunteerAttendanceSession,
@@ -111,6 +112,16 @@ export default function VolunteerEventPage() {
 
   const assignedTasks = useMemo(
     () => tasks.filter((task) => volunteer && task.assignedVolunteerIds.includes(volunteer.id)),
+    [tasks, volunteer]
+  );
+  const openInProgressTasks = useMemo(
+    () =>
+      tasks.filter(
+        (task) =>
+          volunteer &&
+          task.status === "in-progress" &&
+          !task.assignedVolunteerIds.includes(volunteer.id)
+      ),
     [tasks, volunteer]
   );
 
@@ -236,6 +247,23 @@ export default function VolunteerEventPage() {
       setSentMessage("Task request sent to supervisors.");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to request more tasks.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addMeToTask(task: VolunteerTask) {
+    if (!volunteer) return;
+    setErrorMessage("");
+    setSaving(true);
+
+    try {
+      if (configured) {
+        await joinTask(task.id, volunteer.id);
+      }
+      setSentMessage(`You were added to ${task.title}.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to join task.");
     } finally {
       setSaving(false);
     }
@@ -381,6 +409,32 @@ export default function VolunteerEventPage() {
                   <Send size={17} />
                   Request More Tasks
                 </Button>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+              <h2 className="text-xl font-black">Open in-progress tasks</h2>
+              <div className="mt-3 grid gap-3">
+                {openInProgressTasks.length > 0 ? (
+                  openInProgressTasks.map((task) => (
+                    <article key={task.id} className="rounded-md border border-ink/10 bg-paper p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-black">{task.title}</h3>
+                          <p className="mt-1 text-sm leading-6 text-ink/70">{task.description || "No description"}</p>
+                        </div>
+                        <span className="rounded bg-white px-2 py-1 text-xs font-bold text-moss">{task.assignedVolunteerIds.length} assigned</span>
+                      </div>
+                      <Button className="mt-3 w-full bg-moss text-white" disabled={saving} onClick={() => addMeToTask(task)}>
+                        Add Me
+                      </Button>
+                    </article>
+                  ))
+                ) : (
+                  <div className="rounded-md border border-ink/10 bg-paper p-3 text-sm font-semibold text-ink/65">
+                    No open in-progress tasks right now.
+                  </div>
+                )}
               </div>
             </div>
           </section>

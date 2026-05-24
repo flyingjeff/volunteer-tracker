@@ -1,5 +1,6 @@
 import {
   addDoc,
+  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -234,6 +235,13 @@ export async function saveTask(task: Partial<VolunteerTask> & Pick<VolunteerTask
 
 export async function deleteTask(taskId: string) {
   await deleteDoc(doc(db, "tasks", taskId));
+}
+
+export async function joinTask(taskId: string, volunteerId: string) {
+  await updateDoc(doc(db, "tasks", taskId), {
+    assignedVolunteerIds: arrayUnion(volunteerId),
+    updatedAt: serverTimestamp()
+  });
 }
 
 export function watchEvents(callback: (events: EventSite[]) => void) {

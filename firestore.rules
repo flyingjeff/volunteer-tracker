@@ -46,6 +46,15 @@ service cloud.firestore {
     match /tasks/{taskId} {
       allow read: if true;
       allow write: if isSupervisorDomain();
+      allow update: if isSupervisorDomain()
+        || (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['assignedVolunteerIds', 'updatedAt'])
+          && request.resource.data.assignedVolunteerIds is list
+          && resource.data.assignedVolunteerIds is list
+          && resource.data.status == 'in-progress'
+          && request.resource.data.status == resource.data.status
+          && request.resource.data.assignedVolunteerIds.hasAll(resource.data.assignedVolunteerIds)
+        );
     }
 
     match /taskFeedback/{feedbackId} {
