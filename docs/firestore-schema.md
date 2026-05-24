@@ -68,6 +68,24 @@ Volunteers do not use passwords. The app stores a random token in browser local 
 }
 ```
 
+## `taskFeedback/{feedbackId}`
+
+```ts
+{
+  eventId: string;
+  siteId: string;
+  volunteerId: string;
+  volunteerName: string;
+  taskId?: string;
+  taskTitle?: string;
+  kind: "task-note" | "more-tasks-request";
+  message: string;
+  createdAt: Timestamp;
+}
+```
+
+Volunteers can create task feedback without signing in. Supervisors can read the feedback stream for the selected event.
+
 ## Recommended Indexes
 
 Create composite indexes when Firebase prompts:
@@ -76,6 +94,7 @@ Create composite indexes when Firebase prompts:
 - `attendanceSessions`: `eventId ASC`, `status ASC`, `checkedInAt DESC`
 - `attendanceSessions`: `eventId ASC`, `checkedInAt DESC`
 - `tasks`: `eventId ASC`, `createdAt DESC`
+- `taskFeedback`: `eventId ASC`, `createdAt DESC`
 
 ## Spark-Safe Google Workspace Path
 

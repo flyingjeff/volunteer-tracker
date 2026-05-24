@@ -14,10 +14,11 @@ import {
   watchAttendanceHistory,
   watchEvents,
   watchLiveAttendance,
+  watchTaskFeedback,
   watchTasks,
   watchVolunteers
 } from "@/lib/firebaseService";
-import type { AttendanceSession, EventSite, TaskStatus, VolunteerProfile, VolunteerTask } from "@/lib/types";
+import type { AttendanceSession, EventSite, TaskFeedback, TaskStatus, VolunteerProfile, VolunteerTask } from "@/lib/types";
 
 const siteId = "main";
 
@@ -62,6 +63,7 @@ export default function SupervisorPage() {
   const [attendance, setAttendance] = useState<AttendanceSession[]>([]);
   const [history, setHistory] = useState<AttendanceSession[]>([]);
   const [tasks, setTasks] = useState<VolunteerTask[]>([]);
+  const [feedback, setFeedback] = useState<TaskFeedback[]>([]);
   const [volunteers, setVolunteers] = useState<VolunteerProfile[]>([]);
   const [events, setEvents] = useState<EventSite[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
@@ -111,17 +113,20 @@ export default function SupervisorPage() {
       setAttendance([]);
       setHistory([]);
       setTasks([]);
+      setFeedback([]);
       return;
     }
 
     const unsubAttendance = watchLiveAttendance(selectedEventId, setAttendance);
     const unsubHistory = watchAttendanceHistory(selectedEventId, setHistory);
     const unsubTasks = watchTasks(selectedEventId, setTasks);
+    const unsubFeedback = watchTaskFeedback(selectedEventId, setFeedback);
 
     return () => {
       unsubAttendance();
       unsubHistory();
       unsubTasks();
+      unsubFeedback();
     };
   }, [hasSupervisorAccess, selectedEventId]);
 
@@ -495,6 +500,34 @@ export default function SupervisorPage() {
                   })
                 }
               />
+            </section>
+
+            <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+              <h2 className="text-xl font-black">Volunteer notes and requests</h2>
+              <div className="mt-4 grid gap-3">
+                {feedback.length === 0 ? (
+                  <div className="rounded-md border border-ink/10 bg-paper p-3 text-sm font-semibold text-ink/65">
+                    No notes or task requests yet.
+                  </div>
+                ) : (
+                  feedback.map((item) => (
+                    <article key={item.id} className="rounded-md border border-ink/10 bg-paper p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h3 className="font-black">{item.volunteerName}</h3>
+                          <p className="mt-1 text-sm font-semibold text-ink/60">
+                            {item.kind === "more-tasks-request" ? "Requested another task" : item.taskTitle ?? "Task note"}
+                          </p>
+                        </div>
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-ink/45">
+                          {item.createdAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-ink/75">{item.message}</p>
+                    </article>
+                  ))
+                )}
+              </div>
             </section>
 
             <section className="grid gap-5 lg:grid-cols-[1fr_0.8fr]">

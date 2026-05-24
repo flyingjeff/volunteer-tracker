@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock, ClipboardList, LogOut, UserRoundPlus } from "lucide-react";
+import { CheckCircle2, Clock, ClipboardList, LogOut, Send, UserRoundPlus } from "lucide-react";
 import { Button, Field, TextArea } from "@/components/ui";
-import { checkIn, checkOut, findVolunteerByTokenHash, upsertVolunteer, watchLiveAttendance, watchTasks } from "@/lib/firebaseService";
+import {
+  addTaskFeedback,
+  checkIn,
+  checkOut,
+  findVolunteerByTokenHash,
+  upsertVolunteer,
+  watchLiveAttendance,
+  watchTasks
+} from "@/lib/firebaseService";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { getOrCreateBrowserToken, sha256 } from "@/lib/token";
 import { demoAttendance, demoTasks } from "@/lib/mockData";
@@ -51,6 +59,9 @@ export default function VolunteerEventPage() {
   const [session, setSession] = useState<AttendanceSession | null>(null);
   const [tasks, setTasks] = useState<VolunteerTask[]>(configured ? [] : demoTasks);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
+  const [moreTaskRequest, setMoreTaskRequest] = useState("");
+  const [sentMessage, setSentMessage] = useState("");
 
   useEffect(() => {
     setEventId(getEventIdFromUrl());
@@ -151,6 +162,48 @@ export default function VolunteerEventPage() {
     setSaving(false);
   }
 
+  async function submitTaskNote(task: VolunteerTask) {
+    if (!volunteer || !taskNotes[task.id]?.trim()) return;
+    setSaving(true);
+
+    if (configured) {
+      await addTaskFeedback({
+        eventId,
+        siteId,
+        volunteerId: volunteer.id,
+        volunteerName: `${volunteer.firstName} ${volunteer.lastName}`.trim(),
+        taskId: task.id,
+        taskTitle: task.title,
+        kind: "task-note",
+        message: taskNotes[task.id].trim()
+      });
+    }
+
+    setTaskNotes((notes) => ({ ...notes, [task.id]: "" }));
+    setSentMessage("Note sent to supervisors.");
+    setSaving(false);
+  }
+
+  async function requestMoreTasks() {
+    if (!volunteer) return;
+    setSaving(true);
+
+    if (configured) {
+      await addTaskFeedback({
+        eventId,
+        siteId,
+        volunteerId: volunteer.id,
+        volunteerName: `${volunteer.firstName} ${volunteer.lastName}`.trim(),
+        kind: "more-tasks-request",
+        message: moreTaskRequest.trim() || "I am available for another task."
+      });
+    }
+
+    setMoreTaskRequest("");
+    setSentMessage("Task request sent to supervisors.");
+    setSaving(false);
+  }
+
   if (loading) {
     return <main className="grid min-h-screen place-items-center px-5 text-sm font-semibold text-ink">Loading check-in...</main>;
   }
@@ -227,6 +280,12 @@ export default function VolunteerEventPage() {
               </div>
             </div>
 
+            {sentMessage && (
+              <div className="rounded-md border border-moss/20 bg-moss/10 p-3 text-sm font-semibold text-moss">
+                {sentMessage}
+              </div>
+            )}
+
             <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
               <div className="flex items-center gap-2">
                 <ClipboardList className="text-moss" />
@@ -241,6 +300,18 @@ export default function VolunteerEventPage() {
                         <span className="rounded bg-white px-2 py-1 text-xs font-bold text-moss">{task.status}</span>
                       </div>
                       <p className="mt-1 text-sm leading-6 text-ink/70">{task.description}</p>
+                      <div className="mt-3 grid gap-2">
+                        <TextArea
+                          label="Notes or feedback"
+                          placeholder="Share progress, blockers, supplies needed, or handoff notes."
+                          value={taskNotes[task.id] ?? ""}
+                          onChange={(event) => setTaskNotes((notes) => ({ ...notes, [task.id]: event.target.value }))}
+                        />
+                        <Button className="bg-moss text-white" disabled={saving || !taskNotes[task.id]?.trim()} onClick={() => submitTaskNote(task)}>
+                          <Send size={17} />
+                          Send Note
+                        </Button>
+                      </div>
                     </article>
                   ))
                 ) : (
@@ -248,6 +319,22 @@ export default function VolunteerEventPage() {
                     No tasks assigned yet.
                   </div>
                 )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
+              <h2 className="text-xl font-black">Need another task?</h2>
+              <div className="mt-3 grid gap-3">
+                <TextArea
+                  label="Optional message"
+                  placeholder="Tell supervisors what kind of task you can help with next."
+                  value={moreTaskRequest}
+                  onChange={(event) => setMoreTaskRequest(event.target.value)}
+                />
+                <Button className="bg-gold text-ink" disabled={saving} onClick={requestMoreTasks}>
+                  <Send size={17} />
+                  Request More Tasks
+                </Button>
               </div>
             </div>
           </section>

@@ -52,3 +52,18 @@ export type EventSite = {
   createdAt?: Date;
   updatedAt?: Date;
 };
+
+export type TaskFeedbackKind = "task-note" | "more-tasks-request";
+
+export type TaskFeedback = {
+  id: string;
+  eventId: string;
+  siteId: string;
+  volunteerId: string;
+  volunteerName: string;
+  taskId?: string;
+  taskTitle?: string;
+  kind: TaskFeedbackKind;
+  message: string;
+  createdAt: Date;
+};

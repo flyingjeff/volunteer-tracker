@@ -21,9 +21,9 @@ firebase.json                    Spark-compatible static Firebase Hosting config
 
 ## MVP Pages
 
-- `/e?eventId=demo-sunday`: volunteer profile, check-in, check-out, assigned tasks.
+- `/e?eventId=demo-sunday`: volunteer profile, check-in, check-out, assigned tasks, task notes, and more-task requests.
 - `/e/demo-sunday`: production QR-friendly URL supported by Firebase Hosting rewrite.
-- `/supervisor`: Google Sign-In, event creation, QR link management, live attendance, task creation, Kanban board, assignments, skills search, attendance history, CSV export.
+- `/supervisor`: Google Sign-In, event creation, QR link management, live attendance, task creation, Kanban board, assignments, volunteer notes/requests, skills search, attendance history, CSV export.
 
 ## Firebase Spark Plan Compatibility
 

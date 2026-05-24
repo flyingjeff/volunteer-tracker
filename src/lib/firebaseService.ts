@@ -15,7 +15,7 @@ import {
   deleteDoc
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { AttendanceSession, EventSite, VolunteerProfile, VolunteerTask } from "@/lib/types";
+import type { AttendanceSession, EventSite, TaskFeedback, VolunteerProfile, VolunteerTask } from "@/lib/types";
 
 function toDate(value: unknown) {
   return value instanceof Timestamp ? value.toDate() : value instanceof Date ? value : new Date();
@@ -77,6 +77,21 @@ function mapEvent(id: string, data: Record<string, unknown>): EventSite {
     active: data.active !== false,
     createdAt: data.createdAt ? toDate(data.createdAt) : undefined,
     updatedAt: data.updatedAt ? toDate(data.updatedAt) : undefined
+  };
+}
+
+function mapTaskFeedback(id: string, data: Record<string, unknown>): TaskFeedback {
+  return {
+    id,
+    eventId: String(data.eventId ?? ""),
+    siteId: String(data.siteId ?? ""),
+    volunteerId: String(data.volunteerId ?? ""),
+    volunteerName: String(data.volunteerName ?? ""),
+    taskId: data.taskId ? String(data.taskId) : undefined,
+    taskTitle: data.taskTitle ? String(data.taskTitle) : undefined,
+    kind: data.kind === "more-tasks-request" ? "more-tasks-request" : "task-note",
+    message: String(data.message ?? ""),
+    createdAt: toDate(data.createdAt)
   };
 }
 
@@ -234,4 +249,21 @@ export async function saveEvent(event: Partial<EventSite> & Pick<EventSite, "nam
 
 export async function deleteEvent(eventId: string) {
   await deleteDoc(doc(db, "events", eventId));
+}
+
+export async function addTaskFeedback(
+  feedback: Omit<TaskFeedback, "id" | "createdAt">
+) {
+  const ref = await addDoc(collection(db, "taskFeedback"), {
+    ...feedback,
+    createdAt: serverTimestamp()
+  });
+  return ref.id;
+}
+
+export function watchTaskFeedback(eventId: string, callback: (feedback: TaskFeedback[]) => void) {
+  return onSnapshot(
+    query(collection(db, "taskFeedback"), where("eventId", "==", eventId), orderBy("createdAt", "desc"), limit(75)),
+    (snapshot) => callback(snapshot.docs.map((item) => mapTaskFeedback(item.id, item.data())))
+  );
 }
