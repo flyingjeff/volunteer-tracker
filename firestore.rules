@@ -12,37 +12,44 @@ service cloud.firestore {
         && request.auth.token.email.matches('.*@hispresencechurch\\.ca$');
     }
 
+    function isTokenHash(value) {
+      return value is string && value.matches('[0-9a-f]{64}');
+    }
+
     match /events/{eventId} {
       allow read: if true;
       allow write: if isSupervisorDomain();
     }
 
     match /volunteers/{volunteerId} {
-      allow create: if request.resource.data.browserTokenHash == volunteerId;
+      allow create: if isTokenHash(volunteerId)
+        && request.resource.data.browserTokenHash == volunteerId;
       allow read: if isSupervisorDomain()
-        || volunteerId.matches('[0-9a-f]{64}');
+        || isTokenHash(volunteerId);
       allow update: if isSupervisorDomain()
         || (
-          resource.data.browserTokenHash == volunteerId
+          isTokenHash(volunteerId)
+          && resource.data.browserTokenHash == volunteerId
           && request.resource.data.browserTokenHash == volunteerId
         );
       allow delete: if isSupervisorDomain();
     }
 
     match /volunteerLookups/{lookupId} {
-      allow read: if true;
-      allow create, update: if request.resource.data.volunteerId is string;
+      allow read: if isTokenHash(lookupId);
+      allow create, update: if isTokenHash(lookupId)
+        && isTokenHash(request.resource.data.volunteerId);
       allow delete: if isSupervisorDomain();
     }
 
     match /attendanceSessions/{sessionId} {
-      allow create: if request.resource.data.volunteerTokenHash is string
+      allow create: if isTokenHash(request.resource.data.volunteerTokenHash)
         && sessionId.matches('.*_' + request.resource.data.volunteerTokenHash + '$');
       allow read: if isSupervisorDomain()
         || sessionId.matches('.*_[0-9a-f]{64}$');
       allow update: if isSupervisorDomain()
         || (
-          resource.data.volunteerTokenHash is string
+          isTokenHash(resource.data.volunteerTokenHash)
           && sessionId.matches('.*_' + resource.data.volunteerTokenHash + '$')
           && request.resource.data.volunteerTokenHash == resource.data.volunteerTokenHash
         );

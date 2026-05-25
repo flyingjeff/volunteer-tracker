@@ -132,15 +132,17 @@ export async function upsertVolunteer(
   tokenHash: string,
   profile: Omit<VolunteerProfile, "id" | "browserTokenHash" | "createdAt" | "updatedAt">
 ) {
+  const volunteerRef = doc(db, "volunteers", tokenHash);
+  const existing = await getDoc(volunteerRef);
   const payload = {
     ...profile,
     browserTokenHash: tokenHash,
     updatedAt: serverTimestamp()
   };
 
-  await setDoc(doc(db, "volunteers", tokenHash), {
+  await setDoc(volunteerRef, {
     ...payload,
-    createdAt: serverTimestamp()
+    ...(existing.exists() ? {} : { createdAt: serverTimestamp() })
   }, { merge: true });
   return tokenHash;
 }

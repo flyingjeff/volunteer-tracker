@@ -172,10 +172,14 @@ export default function VolunteerEventPage() {
     try {
       if (configured) {
         const id = await upsertVolunteer(tokenHash, profile);
-        if (profile.email && profile.phone) {
-          await saveVolunteerLookup(await profileLookupId(profile.email, profile.phone), id);
-        }
         setVolunteer({ ...profile, id, browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
+        if (profile.email && profile.phone) {
+          try {
+            await saveVolunteerLookup(await profileLookupId(profile.email, profile.phone), id);
+          } catch {
+            setSentMessage("Profile saved. Profile lookup recovery could not be updated.");
+          }
+        }
       } else {
         setVolunteer({ ...profile, id: "demo-local", browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
       }
@@ -215,12 +219,16 @@ export default function VolunteerEventPage() {
       };
       const id = await upsertVolunteer(tokenHash, profile);
       if (profile.email && profile.phone) {
-        await saveVolunteerLookup(await profileLookupId(profile.email, profile.phone), id);
+        try {
+          await saveVolunteerLookup(await profileLookupId(profile.email, profile.phone), id);
+        } catch {
+          setSentMessage("Profile found. Profile lookup recovery could not be updated.");
+        }
       }
 
       setVolunteer({ ...profile, id, browserTokenHash: tokenHash, createdAt: existing.createdAt, updatedAt: new Date() });
       setFindProfile(emptyFindProfile);
-      setSentMessage("Profile found. Welcome back.");
+      setSentMessage((message) => message || "Profile found. Welcome back.");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to find profile.");
     } finally {
