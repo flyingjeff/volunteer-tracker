@@ -18,6 +18,7 @@ import {
 } from "@/lib/firebaseService";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { clearBrowserToken, getOrCreateBrowserToken, sha256 } from "@/lib/token";
+import { getVolunteerLookupIds } from "@/lib/volunteerLookup";
 import { demoAttendance, demoTasks } from "@/lib/mockData";
 import type { AttendanceSession, EventSite, VolunteerProfile, VolunteerTask } from "@/lib/types";
 
@@ -52,14 +53,6 @@ const emptyFindProfile: FindProfileState = {
   email: "",
   phone: ""
 };
-
-function normalizeEmail(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function normalizePhone(value: string) {
-  return value.replace(/\D/g, "");
-}
 
 function getEventIdFromUrl() {
   if (typeof window === "undefined") return "demo-sunday";
@@ -146,8 +139,9 @@ export default function VolunteerEventPage() {
     [tasks, volunteer]
   );
 
-  async function profileLookupId(email: string, phone: string) {
-    return sha256(`${normalizeEmail(email)}|${normalizePhone(phone)}`);
+  async function saveProfileLookups(email: string, phone: string, volunteerId: string) {
+    const lookupIds = await getVolunteerLookupIds(email, phone);
+    await Promise.all(lookupIds.map((lookupId) => saveVolunteerLookup(lookupId, volunteerId)));
   }
 
   async function saveProfile() {
@@ -173,9 +167,9 @@ export default function VolunteerEventPage() {
       if (configured) {
         const id = await upsertVolunteer(tokenHash, profile);
         setVolunteer({ ...profile, id, browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
-        if (profile.email && profile.phone) {
+        if (profile.email || profile.phone) {
           try {
-            await saveVolunteerLookup(await profileLookupId(profile.email, profile.phone), id);
+            await saveProfileLookups(profile.email, profile.phone, id);
           } catch {
             setSentMessage("Profile saved. Profile lookup recovery could not be updated.");
           }
@@ -191,7 +185,7 @@ export default function VolunteerEventPage() {
   }
 
   async function findExistingProfile() {
-    if (!findProfile.email || !findProfile.phone) return;
+    if (!findProfile.email && !findProfile.phone) return;
     setErrorMessage("");
     setSaving(true);
 
@@ -201,9 +195,14 @@ export default function VolunteerEventPage() {
         return;
       }
 
-      const existing = await findVolunteerByLookup(await profileLookupId(findProfile.email, findProfile.phone));
+      const lookupIds = await getVolunteerLookupIds(findProfile.email, findProfile.phone);
+      let existing: VolunteerProfile | null = null;
+      for (const lookupId of lookupIds) {
+        existing = await findVolunteerByLookup(lookupId);
+        if (existing) break;
+      }
       if (!existing) {
-        setErrorMessage("No profile found for that email and phone.");
+        setErrorMessage("No profile found for that email or phone.");
         return;
       }
 
@@ -218,9 +217,9 @@ export default function VolunteerEventPage() {
         consentAcknowledged: existing.consentAcknowledged
       };
       const id = await upsertVolunteer(tokenHash, profile);
-      if (profile.email && profile.phone) {
+      if (profile.email || profile.phone) {
         try {
-          await saveVolunteerLookup(await profileLookupId(profile.email, profile.phone), id);
+          await saveProfileLookups(profile.email, profile.phone, id);
         } catch {
           setSentMessage("Profile found. Profile lookup recovery could not be updated.");
         }
@@ -414,7 +413,7 @@ export default function VolunteerEventPage() {
                   value={findProfile.phone}
                   onChange={(event) => setFindProfile({ ...findProfile, phone: event.target.value })}
                 />
-                <Button className="bg-gold text-ink" disabled={saving || !findProfile.email || !findProfile.phone} onClick={findExistingProfile}>
+                <Button className="bg-gold text-ink" disabled={saving || (!findProfile.email && !findProfile.phone)} onClick={findExistingProfile}>
                   Find Profile
                 </Button>
               </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarPlus, ClipboardList, Copy, Download, LogIn, LogOut, Pencil, Plus, QrCode, Search, ShieldCheck, Trash2, UsersRound } from "lucide-react";
+import { CalendarPlus, ClipboardList, Copy, Download, LogIn, LogOut, Pencil, Plus, QrCode, Search, ShieldCheck, Trash2, UsersRound, X } from "lucide-react";
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
 import { Button, Field, TextArea } from "@/components/ui";
 import { KanbanBoard } from "@/components/KanbanBoard";
@@ -10,8 +10,11 @@ import {
   addActivityLog,
   deleteEvent,
   deleteTask,
+  deleteVolunteer,
   saveEvent,
+  saveManagedVolunteer,
   saveTask,
+  saveVolunteerLookup,
   watchActivityLogs,
   watchAttendanceHistory,
   watchEvents,
@@ -21,6 +24,7 @@ import {
   watchVolunteers
 } from "@/lib/firebaseService";
 import { generateQrSvgDataUri } from "@/lib/qrCode";
+import { getVolunteerLookupIds } from "@/lib/volunteerLookup";
 import type { ActivityLog, AttendanceSession, EventSite, TaskFeedback, TaskStatus, VolunteerProfile, VolunteerTask } from "@/lib/types";
 
 const siteId = "main";
@@ -48,6 +52,18 @@ type EventForm = {
 
 type SupervisorView = "tasks" | "attendance" | "volunteers";
 
+type VolunteerForm = {
+  id?: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+  skills: string;
+  emergencyContact: string;
+  notes: string;
+  consentAcknowledged: boolean;
+};
+
 const emptyEvent: EventForm = {
   name: "",
   location: "",
@@ -55,9 +71,26 @@ const emptyEvent: EventForm = {
   active: true
 };
 
+const emptyVolunteer: VolunteerForm = {
+  firstName: "",
+  lastName: "",
+  phone: "",
+  email: "",
+  skills: "",
+  emergencyContact: "",
+  notes: "",
+  consentAcknowledged: true
+};
+
 function toDateTimeInputValue(date: Date) {
   const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return offsetDate.toISOString().slice(0, 16);
+}
+
+function createVolunteerId() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export default function SupervisorPage() {
@@ -76,6 +109,8 @@ export default function SupervisorPage() {
   const [pendingEventId, setPendingEventId] = useState("");
   const [eventForm, setEventForm] = useState<EventForm>(emptyEvent);
   const [taskForm, setTaskForm] = useState<TaskForm>(emptyTask);
+  const [volunteerForm, setVolunteerForm] = useState<VolunteerForm>(emptyVolunteer);
+  const [selectedVolunteerId, setSelectedVolunteerId] = useState("");
   const [skillQuery, setSkillQuery] = useState("");
   const [copiedEventId, setCopiedEventId] = useState("");
   const [activeView, setActiveView] = useState<SupervisorView>("tasks");
@@ -209,6 +244,94 @@ export default function SupervisorPage() {
     }
   }
 
+  function editVolunteer(volunteer: VolunteerProfile) {
+    setSelectedVolunteerId(volunteer.id);
+    setVolunteerForm({
+      id: volunteer.id,
+      firstName: volunteer.firstName,
+      lastName: volunteer.lastName,
+      phone: volunteer.phone,
+      email: volunteer.email,
+      skills: volunteer.skills.join(", "),
+      emergencyContact: volunteer.emergencyContact,
+      notes: volunteer.notes,
+      consentAcknowledged: volunteer.consentAcknowledged
+    });
+  }
+
+  async function saveVolunteerLookups(email: string, phone: string, volunteerId: string) {
+    const lookupIds = await getVolunteerLookupIds(email, phone);
+    await Promise.all(lookupIds.map((lookupId) => saveVolunteerLookup(lookupId, volunteerId)));
+  }
+
+  async function handleUpdateVolunteerLookupIndex() {
+    setErrorMessage("");
+    setSaving(true);
+
+    try {
+      await Promise.all(
+        volunteers
+          .filter((volunteer) => volunteer.email || volunteer.phone)
+          .map((volunteer) => saveVolunteerLookups(volunteer.email, volunteer.phone, volunteer.id))
+      );
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to update volunteer lookup index.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSaveVolunteer() {
+    if (!volunteerForm.firstName.trim() || !volunteerForm.lastName.trim()) return;
+    setErrorMessage("");
+    setSaving(true);
+
+    const volunteerId = volunteerForm.id ?? createVolunteerId();
+    const profile = {
+      firstName: volunteerForm.firstName.trim(),
+      lastName: volunteerForm.lastName.trim(),
+      phone: volunteerForm.phone.trim(),
+      email: volunteerForm.email.trim(),
+      skills: volunteerForm.skills
+        .split(",")
+        .map((skill) => skill.trim())
+        .filter(Boolean),
+      emergencyContact: volunteerForm.emergencyContact.trim(),
+      notes: volunteerForm.notes.trim(),
+      consentAcknowledged: volunteerForm.consentAcknowledged
+    };
+
+    try {
+      if (hasSupervisorAccess) {
+        await saveManagedVolunteer(volunteerId, profile);
+        if (profile.email || profile.phone) await saveVolunteerLookups(profile.email, profile.phone, volunteerId);
+      }
+      setVolunteerForm(emptyVolunteer);
+      setSelectedVolunteerId("");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to save volunteer.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteVolunteer(volunteerId: string) {
+    setErrorMessage("");
+    setSaving(true);
+
+    try {
+      if (hasSupervisorAccess) await deleteVolunteer(volunteerId);
+      if (selectedVolunteerId === volunteerId) {
+        setVolunteerForm(emptyVolunteer);
+        setSelectedVolunteerId("");
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to delete volunteer.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSaveEvent() {
     if (!eventForm.name.trim() || !eventForm.location.trim() || !eventForm.startsAt) return;
     setErrorMessage("");
@@ -320,6 +443,22 @@ export default function SupervisorPage() {
           ];
         })
       )
+    ]);
+  }
+
+  function exportVolunteersCsv() {
+    downloadCsv("volunteer-database.csv", [
+      ["First name", "Last name", "Email", "Phone", "Skills", "Emergency contact", "Notes", "Consent acknowledged"],
+      ...volunteers.map((volunteer) => [
+        volunteer.firstName,
+        volunteer.lastName,
+        volunteer.email,
+        volunteer.phone,
+        volunteer.skills.join("; "),
+        volunteer.emergencyContact,
+        volunteer.notes,
+        volunteer.consentAcknowledged ? "Yes" : "No"
+      ])
     ]);
   }
 
@@ -878,34 +1017,133 @@ export default function SupervisorPage() {
 
                     <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <h2 className="text-xl font-black">Volunteer skills and notes</h2>
-                        <label className="relative block">
-                          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink/45" size={17} />
-                          <input
-                            className="focus-ring min-h-11 rounded-md border border-ink/15 bg-paper pl-9 pr-3 text-sm font-semibold"
-                            placeholder="Search skills"
-                            value={skillQuery}
-                            onChange={(event) => setSkillQuery(event.target.value)}
-                          />
-                        </label>
+                        <h2 className="text-xl font-black">Volunteer database</h2>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <label className="relative block">
+                            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink/45" size={17} />
+                            <input
+                              className="focus-ring min-h-11 rounded-md border border-ink/15 bg-paper pl-9 pr-3 text-sm font-semibold"
+                              placeholder="Search name, email, phone, skill"
+                              value={skillQuery}
+                              onChange={(event) => setSkillQuery(event.target.value)}
+                            />
+                          </label>
+                          <Button className="bg-paper text-ink" disabled={volunteers.length === 0} onClick={exportVolunteersCsv}>
+                            <Download size={17} />
+                            Volunteers CSV
+                          </Button>
+                          <Button className="bg-paper text-ink" disabled={saving || volunteers.length === 0} onClick={handleUpdateVolunteerLookupIndex}>
+                            <Search size={17} />
+                            Update Lookup Index
+                          </Button>
+                        </div>
                       </div>
-                      <div className="mt-4 grid gap-3 md:grid-cols-2">
-                        {filteredVolunteers.map((volunteer) => (
-                          <article key={volunteer.id} className="rounded-md border border-ink/10 bg-paper p-3">
-                            <h3 className="font-black">
-                              {volunteer.firstName} {volunteer.lastName}
-                            </h3>
-                            <p className="mt-1 text-sm font-semibold text-ink/60">{volunteer.phone || volunteer.email}</p>
-                            <div className="mt-3 flex flex-wrap gap-1.5">
-                              {volunteer.skills.map((skill) => (
-                                <span key={skill} className="rounded bg-white px-2 py-1 text-xs font-bold text-moss">
-                                  {skill}
-                                </span>
+                      <div className="mt-4 grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
+                        <div className="grid gap-3 rounded-md border border-ink/10 bg-paper p-3">
+                          <h3 className="font-black">{selectedVolunteerId ? "Edit volunteer" : "Add volunteer"}</h3>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <Field label="First name" value={volunteerForm.firstName} onChange={(event) => setVolunteerForm({ ...volunteerForm, firstName: event.target.value })} />
+                            <Field label="Last name" value={volunteerForm.lastName} onChange={(event) => setVolunteerForm({ ...volunteerForm, lastName: event.target.value })} />
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <Field label="Email" type="email" value={volunteerForm.email} onChange={(event) => setVolunteerForm({ ...volunteerForm, email: event.target.value })} />
+                            <Field label="Phone" type="tel" value={volunteerForm.phone} onChange={(event) => setVolunteerForm({ ...volunteerForm, phone: event.target.value })} />
+                          </div>
+                          <Field
+                            label="Skills/interests"
+                            placeholder="kids, setup, greeting"
+                            value={volunteerForm.skills}
+                            onChange={(event) => setVolunteerForm({ ...volunteerForm, skills: event.target.value })}
+                          />
+                          <Field
+                            label="Emergency contact"
+                            value={volunteerForm.emergencyContact}
+                            onChange={(event) => setVolunteerForm({ ...volunteerForm, emergencyContact: event.target.value })}
+                          />
+                          <TextArea label="Notes" value={volunteerForm.notes} onChange={(event) => setVolunteerForm({ ...volunteerForm, notes: event.target.value })} />
+                          <label className="flex items-center gap-3 rounded-md border border-ink/10 bg-white p-3 text-sm font-semibold text-ink">
+                            <input
+                              className="h-5 w-5 accent-moss"
+                              type="checkbox"
+                              checked={volunteerForm.consentAcknowledged}
+                              onChange={(event) => setVolunteerForm({ ...volunteerForm, consentAcknowledged: event.target.checked })}
+                            />
+                            Consent acknowledged
+                          </label>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <Button className="bg-moss text-white" disabled={saving || !volunteerForm.firstName || !volunteerForm.lastName} onClick={handleSaveVolunteer}>
+                              <Plus size={18} />
+                              {selectedVolunteerId ? "Update Volunteer" : "Add Volunteer"}
+                            </Button>
+                            <Button
+                              className="bg-white text-ink"
+                              onClick={() => {
+                                setVolunteerForm(emptyVolunteer);
+                                setSelectedVolunteerId("");
+                              }}
+                            >
+                              <X size={18} />
+                              Clear
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="max-h-[42rem] overflow-auto">
+                          <table className="w-full min-w-[48rem] border-separate border-spacing-y-2 text-left text-sm">
+                            <thead className="text-xs uppercase tracking-[0.12em] text-ink/45">
+                              <tr>
+                                <th>Name</th>
+                                <th>Contact</th>
+                                <th>Skills</th>
+                                <th>Notes</th>
+                                <th className="text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredVolunteers.map((volunteer) => (
+                                <tr key={volunteer.id} className="bg-paper align-top">
+                                  <td className="rounded-l-md p-3">
+                                    <p className="font-black">
+                                      {volunteer.firstName} {volunteer.lastName}
+                                    </p>
+                                    <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/45">
+                                      {volunteer.consentAcknowledged ? "Consent on file" : "Consent missing"}
+                                    </p>
+                                  </td>
+                                  <td className="p-3 font-semibold text-ink/70">
+                                    <p>{volunteer.email || "No email"}</p>
+                                    <p className="mt-1">{volunteer.phone || "No phone"}</p>
+                                    {volunteer.emergencyContact && <p className="mt-2 text-xs text-ink/55">Emergency: {volunteer.emergencyContact}</p>}
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {volunteer.skills.length === 0 ? (
+                                        <span className="text-sm font-semibold text-ink/50">No skills listed</span>
+                                      ) : (
+                                        volunteer.skills.map((skill) => (
+                                          <span key={skill} className="rounded bg-white px-2 py-1 text-xs font-bold text-moss">
+                                            {skill}
+                                          </span>
+                                        ))
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="max-w-xs p-3 text-sm font-semibold leading-6 text-ink/65">{volunteer.notes || "No notes"}</td>
+                                  <td className="rounded-r-md p-3">
+                                    <div className="flex justify-end gap-2">
+                                      <Button className="min-h-9 bg-white px-2 text-ink" title="Edit volunteer" onClick={() => editVolunteer(volunteer)}>
+                                        <Pencil size={16} />
+                                      </Button>
+                                      <Button className="min-h-9 bg-white px-2 text-clay" title="Delete volunteer" disabled={saving} onClick={() => handleDeleteVolunteer(volunteer.id)}>
+                                        <Trash2 size={16} />
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </tr>
                               ))}
-                            </div>
-                            {volunteer.notes && <p className="mt-3 text-sm leading-6 text-ink/70">{volunteer.notes}</p>}
-                          </article>
-                        ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     </section>
                   </>

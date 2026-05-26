@@ -37,7 +37,7 @@ QR codes can point to `/e/{eventId}` in production. Firebase Hosting rewrites th
 
 Volunteers do not use passwords. The app stores a random token in browser local storage and uses its SHA-256 hash as the volunteer document ID. That lets returning volunteers load their own profile without exposing the full volunteer collection.
 
-## `volunteerLookups/{emailPhoneHash}`
+## `volunteerLookups/{lookupHash}`
 
 ```ts
 {
@@ -46,7 +46,7 @@ Volunteers do not use passwords. The app stores a random token in browser local 
 }
 ```
 
-The find-profile flow hashes normalized email plus phone, reads this lookup, and binds the existing profile to the current browser token. This is a Spark-friendly recovery flow, not a verified email login.
+The find-profile flow writes lookup hashes for normalized email, normalized phone, and the older combined email-plus-phone format for backwards compatibility. Volunteers can recover a profile with either email or phone, and the app binds the existing profile to the current browser token. This is a Spark-friendly recovery flow, not a verified email login.
 
 ## `attendanceSessions/{sessionId}`
 

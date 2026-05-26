@@ -175,11 +175,32 @@ export async function upsertVolunteer(
   return tokenHash;
 }
 
+export async function saveManagedVolunteer(
+  volunteerId: string,
+  profile: Omit<VolunteerProfile, "id" | "browserTokenHash" | "createdAt" | "updatedAt">
+) {
+  const volunteerRef = doc(db, "volunteers", volunteerId);
+  const existing = await getDoc(volunteerRef);
+
+  await setDoc(volunteerRef, {
+    ...profile,
+    browserTokenHash: volunteerId,
+    updatedAt: serverTimestamp(),
+    ...(existing.exists() ? {} : { createdAt: serverTimestamp() })
+  }, { merge: true });
+
+  return volunteerId;
+}
+
 export async function saveVolunteerLookup(lookupId: string, volunteerId: string) {
   await setDoc(doc(db, "volunteerLookups", lookupId), {
     volunteerId,
     updatedAt: serverTimestamp()
   });
+}
+
+export async function deleteVolunteer(volunteerId: string) {
+  await deleteDoc(doc(db, "volunteers", volunteerId));
 }
 
 export async function findVolunteerByLookup(lookupId: string) {
