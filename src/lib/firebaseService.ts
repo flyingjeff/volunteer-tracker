@@ -123,6 +123,34 @@ function volunteerName(volunteer: Pick<VolunteerProfile, "firstName" | "lastName
   return `${volunteer.firstName} ${volunteer.lastName}`.trim();
 }
 
+function slugify(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function dateSlug(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+async function getAvailableEventId(name: string, startsAt: Date) {
+  const baseId = [slugify(name), dateSlug(startsAt)].filter(Boolean).join("-") || `event-${dateSlug(startsAt)}`;
+
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const eventId = attempt === 0 ? baseId : `${baseId}-${attempt + 1}`;
+    const existing = await getDoc(doc(db, "events", eventId));
+    if (!existing.exists()) return eventId;
+  }
+
+  return `${baseId}-${Date.now()}`;
+}
+
 export async function findVolunteerByTokenHash(tokenHash: string) {
   const match = await getDoc(doc(db, "volunteers", tokenHash));
   return match.exists() ? mapVolunteer(match.id, match.data()) : null;
@@ -344,11 +372,12 @@ export async function saveEvent(event: Partial<EventSite> & Pick<EventSite, "nam
     return event.id;
   }
 
-  const ref = await addDoc(collection(db, "events"), {
+  const eventId = await getAvailableEventId(event.name, event.startsAt);
+  await setDoc(doc(db, "events", eventId), {
     ...payload,
     createdAt: serverTimestamp()
   });
-  return ref.id;
+  return eventId;
 }
 
 export async function deleteEvent(eventId: string) {
