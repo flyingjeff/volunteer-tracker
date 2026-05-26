@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarPlus, ClipboardList, Copy, Download, LogIn, LogOut, Pencil, Plus, Search, ShieldCheck, Trash2, UsersRound } from "lucide-react";
+import { CalendarPlus, ClipboardList, Copy, Download, LogIn, LogOut, Pencil, Plus, QrCode, Search, ShieldCheck, Trash2, UsersRound } from "lucide-react";
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
 import { Button, Field, TextArea } from "@/components/ui";
 import { KanbanBoard } from "@/components/KanbanBoard";
@@ -20,6 +20,7 @@ import {
   watchTasks,
   watchVolunteers
 } from "@/lib/firebaseService";
+import { generateQrSvgDataUri } from "@/lib/qrCode";
 import type { ActivityLog, AttendanceSession, EventSite, TaskFeedback, TaskStatus, VolunteerProfile, VolunteerTask } from "@/lib/types";
 
 const siteId = "main";
@@ -341,10 +342,21 @@ export default function SupervisorPage() {
     return `${window.location.origin}/e/${eventId}`;
   }
 
+  function getQrCodeDataUri(eventItem: EventSite) {
+    return generateQrSvgDataUri(getQrLink(eventItem.id), `${eventItem.name} check-in QR code`);
+  }
+
   async function copyQrLink(eventId: string) {
     await navigator.clipboard.writeText(getQrLink(eventId));
     setCopiedEventId(eventId);
     window.setTimeout(() => setCopiedEventId(""), 1800);
+  }
+
+  function downloadQrCode(eventItem: EventSite) {
+    const link = document.createElement("a");
+    link.href = getQrCodeDataUri(eventItem);
+    link.download = `${eventItem.id}-qr-code.svg`;
+    link.click();
   }
 
   function requestEventChange(eventId: string) {
@@ -539,24 +551,34 @@ export default function SupervisorPage() {
                             }`}
                           >
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                              <button className="text-left" onClick={() => requestEventChange(eventItem.id)}>
-                                <h3 className="font-black">{eventItem.name}</h3>
-                                <p className="mt-1 text-sm font-semibold text-ink/60">{eventItem.location}</p>
-                                <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/45">
-                                  {eventItem.startsAt.toLocaleString([], {
-                                    month: "short",
-                                    day: "numeric",
-                                    hour: "numeric",
-                                    minute: "2-digit"
-                                  })}
-                                  {eventItem.active ? " | Active" : " | Inactive"}
-                                </p>
-                                <p className="mt-2 break-all text-xs font-semibold text-moss">{getQrLink(eventItem.id)}</p>
-                              </button>
-                              <div className="flex shrink-0 gap-2">
+                              <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-[6rem_1fr]">
+                                <img
+                                  className="h-24 w-24 rounded-md border border-ink/10 bg-white p-2"
+                                  src={getQrCodeDataUri(eventItem)}
+                                  alt={`${eventItem.name} check-in QR code`}
+                                />
+                                <button className="min-w-0 text-left" onClick={() => requestEventChange(eventItem.id)}>
+                                  <h3 className="font-black">{eventItem.name}</h3>
+                                  <p className="mt-1 text-sm font-semibold text-ink/60">{eventItem.location}</p>
+                                  <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/45">
+                                    {eventItem.startsAt.toLocaleString([], {
+                                      month: "short",
+                                      day: "numeric",
+                                      hour: "numeric",
+                                      minute: "2-digit"
+                                    })}
+                                    {eventItem.active ? " | Active" : " | Inactive"}
+                                  </p>
+                                  <p className="mt-2 break-all text-xs font-semibold text-moss">{getQrLink(eventItem.id)}</p>
+                                </button>
+                              </div>
+                              <div className="flex shrink-0 flex-wrap gap-2">
                                 <Button className="min-h-9 bg-white px-2 text-ink" title="Copy QR link" onClick={() => copyQrLink(eventItem.id)}>
                                   <Copy size={16} />
                                   {copiedEventId === eventItem.id ? "Copied" : ""}
+                                </Button>
+                                <Button className="min-h-9 bg-white px-2 text-ink" title="Download QR code" onClick={() => downloadQrCode(eventItem)}>
+                                  <Download size={16} />
                                 </Button>
                                 <Button
                                   className="min-h-9 bg-white px-2 text-ink"
@@ -609,17 +631,31 @@ export default function SupervisorPage() {
             ) : (
               <>
                 <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-sm font-bold text-ink/55">Current event</p>
-                      <h2 className="mt-1 text-2xl font-black">{selectedEvent.name}</h2>
-                      <p className="mt-1 text-sm font-semibold text-ink/65">{selectedEvent.location}</p>
-                      <p className="mt-2 break-all text-xs font-semibold text-moss">{getQrLink(selectedEvent.id)}</p>
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                      <img
+                        className="h-36 w-36 rounded-md border border-ink/10 bg-white p-3"
+                        src={getQrCodeDataUri(selectedEvent)}
+                        alt={`${selectedEvent.name} check-in QR code`}
+                      />
+                      <div>
+                        <p className="flex items-center gap-2 text-sm font-bold text-ink/55">
+                          <QrCode size={17} />
+                          Current event
+                        </p>
+                        <h2 className="mt-1 text-2xl font-black">{selectedEvent.name}</h2>
+                        <p className="mt-1 text-sm font-semibold text-ink/65">{selectedEvent.location}</p>
+                        <p className="mt-2 break-all text-xs font-semibold text-moss">{getQrLink(selectedEvent.id)}</p>
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button className="bg-paper text-ink" onClick={() => copyQrLink(selectedEvent.id)}>
                         <Copy size={17} />
                         {copiedEventId === selectedEvent.id ? "Copied" : "Copy QR Link"}
+                      </Button>
+                      <Button className="bg-paper text-ink" onClick={() => downloadQrCode(selectedEvent)}>
+                        <Download size={17} />
+                        Download QR
                       </Button>
                       <Button className="bg-ink text-white" onClick={() => setEventMenuOpen(true)}>
                         <CalendarPlus size={17} />
