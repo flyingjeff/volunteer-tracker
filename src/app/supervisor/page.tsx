@@ -12,6 +12,7 @@ import {
   deleteEvent,
   deleteTask,
   deleteVolunteer,
+  mergeVolunteerProfileRecords,
   saveEvent,
   saveManagedVolunteer,
   saveTask,
@@ -130,6 +131,8 @@ export default function SupervisorPage() {
   const [taskForm, setTaskForm] = useState<TaskForm>(emptyTask);
   const [volunteerForm, setVolunteerForm] = useState<VolunteerForm>(emptyVolunteer);
   const [selectedVolunteerId, setSelectedVolunteerId] = useState("");
+  const [mergeSourceId, setMergeSourceId] = useState("");
+  const [mergeTargetId, setMergeTargetId] = useState("");
   const [skillQuery, setSkillQuery] = useState("");
   const [copiedEventId, setCopiedEventId] = useState("");
   const [activeView, setActiveView] = useState<SupervisorView>("tasks");
@@ -481,6 +484,61 @@ export default function SupervisorPage() {
     }
   }
 
+  async function handleMergeVolunteers() {
+    if (!mergeSourceId || !mergeTargetId || mergeSourceId === mergeTargetId) return;
+    const source = volunteers.find((volunteer) => volunteer.id === mergeSourceId);
+    const target = volunteers.find((volunteer) => volunteer.id === mergeTargetId);
+    if (!source || !target) return;
+
+    setErrorMessage("");
+    setSaving(true);
+
+    const mergedProfile = {
+      firstName: target.firstName || source.firstName,
+      lastName: target.lastName || source.lastName,
+      phone: target.phone || source.phone,
+      email: target.email || source.email,
+      dateOfBirth: target.dateOfBirth || source.dateOfBirth,
+      skills: Array.from(new Set([...target.skills, ...source.skills])),
+      emergencyContact: target.emergencyContact || source.emergencyContact,
+      guardianName: target.guardianName || source.guardianName,
+      guardianPhone: target.guardianPhone || source.guardianPhone,
+      guardianEmail: target.guardianEmail || source.guardianEmail,
+      waiverSignerName: target.waiverSignerName || source.waiverSignerName,
+      waiverSignedBy: target.waiverSignedBy || source.waiverSignedBy,
+      waiverAcknowledgedAt: target.waiverAcknowledgedAt ?? source.waiverAcknowledgedAt,
+      waiverTextVersion: target.waiverTextVersion || source.waiverTextVersion,
+      notes: [target.notes, source.notes].filter(Boolean).join("\n\nMerged duplicate note:\n"),
+      consentAcknowledged: target.consentAcknowledged || source.consentAcknowledged
+    };
+
+    try {
+      if (hasSupervisorAccess) {
+        await saveManagedVolunteer(mergeTargetId, mergedProfile);
+        if (mergedProfile.email || mergedProfile.phone) await saveVolunteerLookups(mergedProfile.email, mergedProfile.phone, mergeTargetId);
+        if (source.email || source.phone) await saveVolunteerLookups(source.email, source.phone, mergeTargetId);
+        await mergeVolunteerProfileRecords(mergeSourceId, {
+          ...mergedProfile,
+          id: mergeTargetId,
+          browserTokenHash: target.browserTokenHash,
+          createdAt: target.createdAt,
+          updatedAt: new Date()
+        });
+      }
+
+      if (selectedVolunteerId === mergeSourceId) {
+        setVolunteerForm(emptyVolunteer);
+        setSelectedVolunteerId("");
+      }
+      setMergeSourceId("");
+      setMergeTargetId("");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to merge volunteer profiles.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSaveEvent() {
     if (!eventForm.name.trim() || !eventForm.location.trim() || !eventForm.startsAt) return;
     setErrorMessage("");
@@ -708,6 +766,226 @@ export default function SupervisorPage() {
     setEventForm(emptyEvent);
   }
 
+  const volunteerManagementConsole = (
+    <section className="rounded-md border border-ink/10 bg-white p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-xl font-black">Volunteer management console</h2>
+          <p className="mt-1 text-sm font-semibold text-ink/55">Correct global profiles, waiver records, duplicates, and contact details.</p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink/45" size={17} />
+            <input
+              className="focus-ring min-h-11 rounded-md border border-ink/15 bg-paper pl-9 pr-3 text-sm font-semibold"
+              placeholder="Search name, email, phone, skill"
+              value={skillQuery}
+              onChange={(event) => setSkillQuery(event.target.value)}
+            />
+          </label>
+          <Button className="bg-paper text-ink" disabled={volunteers.length === 0} onClick={exportVolunteersCsv}>
+            <Download size={17} />
+            Volunteers CSV
+          </Button>
+          <Button className="bg-paper text-ink" disabled={saving || volunteers.length === 0} onClick={handleUpdateVolunteerLookupIndex}>
+            <Search size={17} />
+            Update Lookup Index
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 rounded-md border border-ink/10 bg-paper p-3 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+        <label className="grid gap-1.5 text-sm font-semibold text-ink">
+          Merge duplicate profile
+          <select
+            className="focus-ring min-h-11 rounded-md border border-ink/15 bg-white px-3 text-sm font-bold text-ink"
+            value={mergeSourceId}
+            onChange={(event) => setMergeSourceId(event.target.value)}
+          >
+            <option value="">Select duplicate</option>
+            {volunteers.map((volunteer) => (
+              <option key={volunteer.id} value={volunteer.id}>
+                {volunteer.firstName} {volunteer.lastName} {volunteer.email ? `- ${volunteer.email}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1.5 text-sm font-semibold text-ink">
+          Keep profile
+          <select
+            className="focus-ring min-h-11 rounded-md border border-ink/15 bg-white px-3 text-sm font-bold text-ink"
+            value={mergeTargetId}
+            onChange={(event) => setMergeTargetId(event.target.value)}
+          >
+            <option value="">Select profile to keep</option>
+            {volunteers
+              .filter((volunteer) => volunteer.id !== mergeSourceId)
+              .map((volunteer) => (
+                <option key={volunteer.id} value={volunteer.id}>
+                  {volunteer.firstName} {volunteer.lastName} {volunteer.email ? `- ${volunteer.email}` : ""}
+                </option>
+              ))}
+          </select>
+        </label>
+        <Button className="bg-ink text-white" disabled={saving || !mergeSourceId || !mergeTargetId || mergeSourceId === mergeTargetId} onClick={handleMergeVolunteers}>
+          Merge Profiles
+        </Button>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+        <div className="grid gap-3 rounded-md border border-ink/10 bg-paper p-3">
+          <h3 className="font-black">{selectedVolunteerId ? "Edit volunteer" : "Add volunteer"}</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="First name" value={volunteerForm.firstName} onChange={(event) => setVolunteerForm({ ...volunteerForm, firstName: event.target.value })} />
+            <Field label="Last name" value={volunteerForm.lastName} onChange={(event) => setVolunteerForm({ ...volunteerForm, lastName: event.target.value })} />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Email" type="email" value={volunteerForm.email} onChange={(event) => setVolunteerForm({ ...volunteerForm, email: event.target.value })} />
+            <Field label="Phone" type="tel" value={volunteerForm.phone} onChange={(event) => setVolunteerForm({ ...volunteerForm, phone: event.target.value })} />
+          </div>
+          <Field label="Date of birth" type="date" value={volunteerForm.dateOfBirth} onChange={(event) => setVolunteerForm({ ...volunteerForm, dateOfBirth: event.target.value })} />
+          <Field
+            label="Skills/interests"
+            placeholder="kids, setup, greeting"
+            value={volunteerForm.skills}
+            onChange={(event) => setVolunteerForm({ ...volunteerForm, skills: event.target.value })}
+          />
+          <Field
+            label="Emergency contact"
+            value={volunteerForm.emergencyContact}
+            onChange={(event) => setVolunteerForm({ ...volunteerForm, emergencyContact: event.target.value })}
+          />
+          <div className="grid gap-3 rounded-md border border-ink/10 bg-white p-3">
+            <p className="text-sm font-bold text-ink">Parent/guardian and waiver</p>
+            <Field label="Parent/guardian name" value={volunteerForm.guardianName} onChange={(event) => setVolunteerForm({ ...volunteerForm, guardianName: event.target.value })} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Parent/guardian phone" type="tel" value={volunteerForm.guardianPhone} onChange={(event) => setVolunteerForm({ ...volunteerForm, guardianPhone: event.target.value })} />
+              <Field label="Parent/guardian email" type="email" value={volunteerForm.guardianEmail} onChange={(event) => setVolunteerForm({ ...volunteerForm, guardianEmail: event.target.value })} />
+            </div>
+            <Field label="Waiver signer" value={volunteerForm.waiverSignerName} onChange={(event) => setVolunteerForm({ ...volunteerForm, waiverSignerName: event.target.value })} />
+            <label className="grid gap-1.5 text-sm font-semibold text-ink">
+              Signed by
+              <select
+                className="focus-ring min-h-11 rounded-md border border-ink/15 bg-white px-3 text-base font-medium text-ink"
+                value={volunteerForm.waiverSignedBy}
+                onChange={(event) =>
+                  setVolunteerForm({
+                    ...volunteerForm,
+                    waiverSignedBy: event.target.value === "guardian" ? "guardian" : event.target.value === "volunteer" ? "volunteer" : ""
+                  })
+                }
+              >
+                <option value="">Not recorded</option>
+                <option value="volunteer">Volunteer</option>
+                <option value="guardian">Parent/guardian</option>
+              </select>
+            </label>
+          </div>
+          <TextArea label="Notes" value={volunteerForm.notes} onChange={(event) => setVolunteerForm({ ...volunteerForm, notes: event.target.value })} />
+          <label className="flex items-center gap-3 rounded-md border border-ink/10 bg-white p-3 text-sm font-semibold text-ink">
+            <input
+              className="h-5 w-5 accent-moss"
+              type="checkbox"
+              checked={volunteerForm.consentAcknowledged}
+              onChange={(event) => setVolunteerForm({ ...volunteerForm, consentAcknowledged: event.target.checked })}
+            />
+            Consent acknowledged
+          </label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button className="bg-moss text-white" disabled={saving || !volunteerForm.firstName || !volunteerForm.lastName} onClick={handleSaveVolunteer}>
+              <Plus size={18} />
+              {selectedVolunteerId ? "Update Volunteer" : "Add Volunteer"}
+            </Button>
+            <Button
+              className="bg-white text-ink"
+              onClick={() => {
+                setVolunteerForm(emptyVolunteer);
+                setSelectedVolunteerId("");
+              }}
+            >
+              <X size={18} />
+              Clear
+            </Button>
+          </div>
+        </div>
+
+        <div className="max-h-[42rem] overflow-auto">
+          <table className="w-full min-w-[62rem] border-separate border-spacing-y-2 text-left text-sm">
+            <thead className="text-xs uppercase tracking-[0.12em] text-ink/45">
+              <tr>
+                <th>Name</th>
+                <th>Contact</th>
+                <th>Age/Guardian</th>
+                <th>Waiver</th>
+                <th>Skills</th>
+                <th>Notes</th>
+                <th className="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredVolunteers.map((volunteer) => (
+                <tr key={volunteer.id} className="bg-paper align-top">
+                  <td className="rounded-l-md p-3">
+                    <p className="font-black">
+                      {volunteer.firstName} {volunteer.lastName}
+                    </p>
+                    <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/45">
+                      {volunteer.consentAcknowledged ? "Consent on file" : "Consent missing"}
+                    </p>
+                  </td>
+                  <td className="p-3 font-semibold text-ink/70">
+                    <p>{volunteer.email || "No email"}</p>
+                    <p className="mt-1">{volunteer.phone || "No phone"}</p>
+                    {volunteer.emergencyContact && <p className="mt-2 text-xs text-ink/55">Emergency: {volunteer.emergencyContact}</p>}
+                  </td>
+                  <td className="p-3 font-semibold text-ink/70">
+                    <p>{volunteer.dateOfBirth || "No DOB"}</p>
+                    {volunteer.guardianName && <p className="mt-2 text-xs text-ink/55">Guardian: {volunteer.guardianName}</p>}
+                    {volunteer.guardianPhone && <p className="mt-1 text-xs text-ink/55">{volunteer.guardianPhone}</p>}
+                    {volunteer.guardianEmail && <p className="mt-1 text-xs text-ink/55">{volunteer.guardianEmail}</p>}
+                  </td>
+                  <td className="p-3 font-semibold text-ink/70">
+                    <p>{volunteer.waiverSignerName || "No signer"}</p>
+                    <p className="mt-1 text-xs uppercase tracking-[0.12em] text-ink/45">{volunteer.waiverSignedBy || "Not recorded"}</p>
+                    {volunteer.waiverAcknowledgedAt && (
+                      <p className="mt-1 text-xs text-ink/55">
+                        {volunteer.waiverAcknowledgedAt.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}
+                      </p>
+                    )}
+                  </td>
+                  <td className="p-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {volunteer.skills.length === 0 ? (
+                        <span className="text-sm font-semibold text-ink/50">No skills listed</span>
+                      ) : (
+                        volunteer.skills.map((skill) => (
+                          <span key={skill} className="rounded bg-white px-2 py-1 text-xs font-bold text-moss">
+                            {skill}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </td>
+                  <td className="max-w-xs p-3 text-sm font-semibold leading-6 text-ink/65">{volunteer.notes || "No notes"}</td>
+                  <td className="rounded-r-md p-3">
+                    <div className="flex justify-end gap-2">
+                      <Button className="min-h-9 bg-white px-2 text-ink" title="Edit volunteer" onClick={() => editVolunteer(volunteer)}>
+                        <Pencil size={16} />
+                      </Button>
+                      <Button className="min-h-9 bg-white px-2 text-clay" title="Delete volunteer" disabled={saving} onClick={() => handleDeleteVolunteer(volunteer.id)}>
+                        <Trash2 size={16} />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+
   return (
     <main className="min-h-screen px-4 py-5 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
@@ -835,7 +1113,7 @@ export default function SupervisorPage() {
 
             {eventMenuOpen && (
               <div className="fixed inset-0 z-40 overflow-y-auto bg-ink/55 px-4 py-6">
-                <section className="mx-auto grid w-full max-w-5xl gap-4 rounded-lg bg-white p-4 shadow-soft lg:grid-cols-[0.8fr_1.2fr]">
+                <section className="mx-auto grid w-full max-w-7xl gap-4 rounded-lg bg-white p-4 shadow-soft lg:grid-cols-[0.65fr_1fr]">
                   <div className="rounded-md border border-ink/10 bg-paper p-4">
                     <div className="flex items-center gap-2">
                       <CalendarPlus className="text-moss" />
@@ -989,6 +1267,8 @@ export default function SupervisorPage() {
                       )}
                     </div>
                   </div>
+
+                  <div className="lg:col-span-2">{volunteerManagementConsole}</div>
                 </section>
               </div>
             )}
@@ -1051,7 +1331,7 @@ export default function SupervisorPage() {
                     {[
                       { id: "tasks" as SupervisorView, label: "Tasks", icon: ClipboardList },
                       { id: "attendance" as SupervisorView, label: "Attendance", icon: UsersRound },
-                      { id: "volunteers" as SupervisorView, label: "Volunteers", icon: Search }
+                      { id: "volunteers" as SupervisorView, label: "Notes & Requests", icon: Search }
                     ].map((item) => {
                       const Icon = item.icon;
                       return (
@@ -1260,6 +1540,7 @@ export default function SupervisorPage() {
                       </div>
                     </section>
 
+                    {false && (
                     <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <h2 className="text-xl font-black">Volunteer database</h2>
@@ -1458,6 +1739,7 @@ export default function SupervisorPage() {
                         </div>
                       </div>
                     </section>
+                    )}
                   </>
                 )}
               </>

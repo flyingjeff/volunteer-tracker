@@ -4,6 +4,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -13,7 +14,8 @@ import {
   Timestamp,
   updateDoc,
   where,
-  deleteDoc
+  deleteDoc,
+  writeBatch
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { ActivityLog, AttendanceSession, EventSite, TaskFeedback, VolunteerProfile, VolunteerTask } from "@/lib/types";
@@ -215,6 +217,36 @@ export async function saveVolunteerLookup(lookupId: string, volunteerId: string)
 
 export async function deleteVolunteer(volunteerId: string) {
   await deleteDoc(doc(db, "volunteers", volunteerId));
+}
+
+export async function mergeVolunteerProfileRecords(sourceVolunteerId: string, targetVolunteer: VolunteerProfile) {
+  const batch = writeBatch(db);
+  const targetName = volunteerName(targetVolunteer);
+
+  const taskSnapshots = await getDocs(query(collection(db, "tasks"), where("assignedVolunteerIds", "array-contains", sourceVolunteerId)));
+  taskSnapshots.docs.forEach((item) => {
+    const task = mapTask(item.id, item.data());
+    batch.update(item.ref, {
+      assignedVolunteerIds: Array.from(
+        new Set(task.assignedVolunteerIds.map((volunteerId) => (volunteerId === sourceVolunteerId ? targetVolunteer.id : volunteerId)))
+      ),
+      updatedAt: serverTimestamp()
+    });
+  });
+
+  const relatedCollections = ["attendanceSessions", "taskFeedback", "activityLogs"];
+  for (const collectionName of relatedCollections) {
+    const snapshot = await getDocs(query(collection(db, collectionName), where("volunteerId", "==", sourceVolunteerId)));
+    snapshot.docs.forEach((item) => {
+      batch.update(item.ref, {
+        volunteerId: targetVolunteer.id,
+        volunteerName: targetName
+      });
+    });
+  }
+
+  batch.delete(doc(db, "volunteers", sourceVolunteerId));
+  await batch.commit();
 }
 
 export async function findVolunteerByLookup(lookupId: string) {
