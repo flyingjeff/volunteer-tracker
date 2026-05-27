@@ -6,6 +6,11 @@ export const metadata: Metadata = {
   title: "Su Presencia Volunteer Check-In",
   description: "Mobile volunteer check-in and supervisor dashboard for Su Presencia Church.",
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/favicon.png"
+  },
   appleWebApp: {
     capable: true,
     title: "Su Presencia Volunteers",
