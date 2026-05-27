@@ -233,7 +233,8 @@ export default function VolunteerEventPage() {
     try {
       if (configured) {
         const id = await upsertVolunteer(tokenHash, profile);
-        setVolunteer({ ...profile, id, browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
+        const savedVolunteer = { ...profile, id, browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() };
+        setVolunteer(savedVolunteer);
         await addActivityLog({
           eventId,
           siteId,
@@ -242,6 +243,7 @@ export default function VolunteerEventPage() {
           volunteerName: `${profile.firstName} ${profile.lastName}`.trim(),
           message: `${profile.firstName} ${profile.lastName}`.trim() + " created a volunteer profile."
         });
+        await checkIn(eventId, siteId, savedVolunteer, tokenHash);
         if (profile.email || profile.phone) {
           try {
             await saveProfileLookups(profile.email, profile.phone, id);
@@ -250,7 +252,17 @@ export default function VolunteerEventPage() {
           }
         }
       } else {
-        setVolunteer({ ...profile, id: "demo-local", browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
+        const savedVolunteer = { ...profile, id: "demo-local", browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() };
+        setVolunteer(savedVolunteer);
+        setSession({
+          id: "local-session",
+          eventId,
+          siteId,
+          volunteerId: savedVolunteer.id,
+          volunteerName: `${savedVolunteer.firstName} ${savedVolunteer.lastName}`,
+          status: "checked-in",
+          checkedInAt: new Date()
+        });
       }
       return true;
     } catch (error) {
