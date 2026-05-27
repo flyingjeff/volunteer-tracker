@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, BellRing, CalendarPlus, ClipboardList, Copy, Download, LogIn, LogOut, Pencil, Plus, QrCode, Search, ShieldCheck, Trash2, UsersRound, X } from "lucide-react";
+import { Bell, BellRing, CalendarPlus, ClipboardList, Copy, Download, LogIn, LogOut, MonitorUp, Pencil, Plus, QrCode, Search, ShieldCheck, Trash2, UsersRound, X } from "lucide-react";
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
 import QRCode from "qrcode";
 import { Button, Field, TextArea } from "@/components/ui";
@@ -1321,6 +1321,15 @@ export default function SupervisorPage() {
                         <Download size={17} />
                         Download QR
                       </Button>
+                      <a
+                        className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-paper px-4 py-2 text-sm font-bold text-ink transition active:scale-[0.99]"
+                        href={`/status?eventId=${encodeURIComponent(selectedEvent.id)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <MonitorUp size={17} />
+                        Status Board
+                      </a>
                       <Button className="bg-ink text-white" onClick={() => setEventMenuOpen(true)}>
                         <CalendarPlus size={17} />
                         Manage Events

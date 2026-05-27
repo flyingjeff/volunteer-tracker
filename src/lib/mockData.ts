@@ -8,7 +8,7 @@ export const demoVolunteers: VolunteerProfile[] = [
     phone: "555-0142",
     email: "ana@example.com",
     dateOfBirth: "1994-06-12",
-    skills: ["kids", "hospitality", "bilingual"],
+    skills: ["supervisor", "kids", "hospitality", "bilingual"],
     emergencyContact: "Luis Rivera, 555-0111",
     guardianName: "",
     guardianPhone: "",

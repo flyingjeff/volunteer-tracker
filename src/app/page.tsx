@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ClipboardList, FileDown, QrCode, ShieldCheck, UsersRound } from "lucide-react";
+import { ClipboardList, FileDown, MonitorUp, ShieldCheck, UsersRound } from "lucide-react";
 
 export default function HomePage() {
   const readinessItems = [
@@ -43,11 +43,11 @@ export default function HomePage() {
                 Open Supervisor Dashboard
               </Link>
               <Link
-                href="/supervisor"
+                href="/status"
                 className="focus-ring inline-flex items-center justify-center gap-2 rounded-md border border-ink/15 bg-white px-5 py-3 font-bold text-ink"
               >
-                <QrCode size={19} />
-                Manage Event QR Links
+                <MonitorUp size={19} />
+                Open Status Board
               </Link>
             </div>
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
