@@ -27,8 +27,14 @@ type FormState = {
   lastName: string;
   phone: string;
   email: string;
+  dateOfBirth: string;
   skills: string;
   emergencyContact: string;
+  guardianName: string;
+  guardianPhone: string;
+  guardianEmail: string;
+  waiverSignerName: string;
+  waiverConfirmed: boolean;
   notes: string;
   consentAcknowledged: boolean;
 };
@@ -43,11 +49,55 @@ const emptyForm: FormState = {
   lastName: "",
   phone: "",
   email: "",
+  dateOfBirth: "",
   skills: "",
   emergencyContact: "",
+  guardianName: "",
+  guardianPhone: "",
+  guardianEmail: "",
+  waiverSignerName: "",
+  waiverConfirmed: false,
   notes: "",
   consentAcknowledged: false
 };
+
+const waiverTextVersion = "renovation-safety-2026-05";
+
+const renovationWaiverRisks = [
+  "Slips, trips, and falls",
+  "Uneven floors and debris",
+  "Power tools and hand tools",
+  "Dust, airborne particles, and loud noise",
+  "Electrical hazards",
+  "Lifting and carrying heavy materials",
+  "Sharp objects and pinch points",
+  "Working near ladders or elevated surfaces",
+  "Exposure to paint, adhesives, cleaning products, or construction materials",
+  "Unexpected hazards associated with demolition or renovation work"
+];
+
+const renovationWaiverAgreements = [
+  "You are voluntarily participating in this activity.",
+  "You understand that renovation and construction activities involve inherent risks that may result in property damage, personal injury, serious injury, or death.",
+  "You agree to follow all instructions provided by project leaders, supervisors, and safety personnel.",
+  "You agree to use required safety equipment and to immediately report unsafe conditions or injuries.",
+  "You confirm that you are physically capable of participating in the activities you choose to perform.",
+  "To the fullest extent permitted by law, you voluntarily assume all risks associated with your participation in this project.",
+  "You release and hold harmless Su Presencia Church, its volunteers, staff, directors, contractors, and property owners from claims, liability, damages, or expenses arising from your participation, except where prohibited by law.",
+  "You understand that you may stop participating at any time if you feel unsafe or unable to continue.",
+  "In the event of an emergency, you authorize project leaders to seek medical assistance on your behalf if necessary."
+];
+
+function getAge(dateOfBirth: string) {
+  if (!dateOfBirth) return null;
+  const birthDate = new Date(`${dateOfBirth}T00:00:00`);
+  if (Number.isNaN(birthDate.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDelta = today.getMonth() - birthDate.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) age -= 1;
+  return age;
+}
 
 const emptyFindProfile: FindProfileState = {
   email: "",
@@ -76,6 +126,7 @@ export default function VolunteerEventPage() {
   const [tasks, setTasks] = useState<VolunteerTask[]>(configured ? [] : demoTasks);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [findProfile, setFindProfile] = useState<FindProfileState>(emptyFindProfile);
+  const [waiverOpen, setWaiverOpen] = useState(false);
   const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
   const [moreTaskRequest, setMoreTaskRequest] = useState("");
   const [sentMessage, setSentMessage] = useState("");
@@ -138,6 +189,13 @@ export default function VolunteerEventPage() {
       ),
     [tasks, volunteer]
   );
+  const volunteerAge = getAge(form.dateOfBirth);
+  const isMinor = volunteerAge !== null && volunteerAge < 18;
+  const canOpenWaiver =
+    Boolean(form.firstName.trim()) &&
+    Boolean(form.lastName.trim()) &&
+    Boolean(form.dateOfBirth) &&
+    (!isMinor || (Boolean(form.guardianName.trim()) && (Boolean(form.guardianPhone.trim()) || Boolean(form.guardianEmail.trim()))));
 
   async function saveProfileLookups(email: string, phone: string, volunteerId: string) {
     const lookupIds = await getVolunteerLookupIds(email, phone);
@@ -145,7 +203,7 @@ export default function VolunteerEventPage() {
   }
 
   async function saveProfile() {
-    if (!form.firstName || !form.lastName || !form.consentAcknowledged) return;
+    if (!canOpenWaiver || !form.consentAcknowledged || !form.waiverConfirmed || !form.waiverSignerName.trim()) return false;
     setErrorMessage("");
     setSaving(true);
 
@@ -154,11 +212,19 @@ export default function VolunteerEventPage() {
       lastName: form.lastName.trim(),
       phone: form.phone.trim(),
       email: form.email.trim(),
+      dateOfBirth: form.dateOfBirth,
       skills: form.skills
         .split(",")
         .map((skill) => skill.trim())
         .filter(Boolean),
       emergencyContact: form.emergencyContact.trim(),
+      guardianName: isMinor ? form.guardianName.trim() : "",
+      guardianPhone: isMinor ? form.guardianPhone.trim() : "",
+      guardianEmail: isMinor ? form.guardianEmail.trim() : "",
+      waiverSignerName: form.waiverSignerName.trim(),
+      waiverSignedBy: isMinor ? "guardian" as const : "volunteer" as const,
+      waiverAcknowledgedAt: new Date(),
+      waiverTextVersion,
       notes: form.notes.trim(),
       consentAcknowledged: form.consentAcknowledged
     };
@@ -177,11 +243,28 @@ export default function VolunteerEventPage() {
       } else {
         setVolunteer({ ...profile, id: "demo-local", browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
       }
+      return true;
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to save profile.");
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  function openWaiverForProfile() {
+    if (!canOpenWaiver) {
+      setErrorMessage(isMinor ? "Enter the parent or guardian information before continuing." : "Enter your name and date of birth before continuing.");
+      return;
+    }
+
+    setErrorMessage("");
+    setWaiverOpen(true);
+  }
+
+  async function agreeAndSaveProfile() {
+    const saved = await saveProfile();
+    if (saved) setWaiverOpen(false);
   }
 
   async function findExistingProfile() {
@@ -211,8 +294,16 @@ export default function VolunteerEventPage() {
         lastName: existing.lastName,
         phone: existing.phone,
         email: existing.email,
+        dateOfBirth: existing.dateOfBirth,
         skills: existing.skills,
         emergencyContact: existing.emergencyContact,
+        guardianName: existing.guardianName,
+        guardianPhone: existing.guardianPhone,
+        guardianEmail: existing.guardianEmail,
+        waiverSignerName: existing.waiverSignerName,
+        waiverSignedBy: existing.waiverSignedBy,
+        waiverAcknowledgedAt: existing.waiverAcknowledgedAt,
+        waiverTextVersion: existing.waiverTextVersion,
         notes: existing.notes,
         consentAcknowledged: existing.consentAcknowledged
       };
@@ -291,6 +382,7 @@ export default function VolunteerEventPage() {
       setMoreTaskRequest("");
       setSentMessage("");
       setForm(emptyForm);
+      setWaiverOpen(false);
       const hash = await sha256(getOrCreateBrowserToken());
       setTokenHash(hash);
     } catch (error) {
@@ -393,6 +485,65 @@ export default function VolunteerEventPage() {
           </div>
         )}
 
+        {waiverOpen && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-ink/60 px-4 py-5">
+            <section className="mx-auto w-full max-w-xl rounded-lg bg-white p-4 shadow-soft">
+              <div className="rounded-md border border-clay/25 bg-clay/10 p-3">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-clay">Warning - Construction / Renovation Area</p>
+                <h2 className="mt-2 text-2xl font-black text-ink">Volunteer Renovation Project Safety Acknowledgment</h2>
+                <p className="mt-2 text-sm font-semibold leading-6 text-ink/70">
+                  You are entering an active renovation and construction work area. Participation may involve exposure to these risks:
+                </p>
+              </div>
+
+              <div className="mt-4 max-h-[48vh] overflow-auto rounded-md border border-ink/10 bg-paper p-3 text-sm leading-6 text-ink/75">
+                <ul className="list-disc space-y-1 pl-5">
+                  {renovationWaiverRisks.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+                <p className="mt-4 font-bold text-ink">By continuing, you acknowledge and agree that:</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {renovationWaiverAgreements.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+                <p className="mt-4 font-bold text-ink">Acknowledgment</p>
+                <p className="mt-1">
+                  By selecting I Agree below, you confirm that you have read and understood this warning and acknowledgment,
+                  understand the risks involved, and voluntarily choose to participate.
+                </p>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                <Field
+                  label={isMinor ? "Parent/guardian signature" : "Volunteer signature"}
+                  placeholder={isMinor ? "Parent or guardian full name" : "Your full name"}
+                  value={form.waiverSignerName}
+                  onChange={(event) => setForm({ ...form, waiverSignerName: event.target.value })}
+                />
+                <label className="flex gap-3 rounded-md border border-ink/10 bg-paper p-3 text-sm font-semibold text-ink">
+                  <input
+                    className="mt-1 h-5 w-5 accent-moss"
+                    type="checkbox"
+                    checked={form.waiverConfirmed}
+                    onChange={(event) => setForm({ ...form, waiverConfirmed: event.target.checked, consentAcknowledged: event.target.checked })}
+                  />
+                  I Agree
+                </label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button className="bg-moss text-white" disabled={saving || !form.waiverConfirmed || !form.waiverSignerName.trim()} onClick={agreeAndSaveProfile}>
+                    Save Profile
+                  </Button>
+                  <Button className="bg-paper text-ink" disabled={saving} onClick={() => setWaiverOpen(false)}>
+                    Back
+                  </Button>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
+
         {!volunteer ? (
           <div className="mt-4 grid gap-4">
             <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
@@ -429,6 +580,29 @@ export default function VolunteerEventPage() {
                 <Field label="Last name" value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} />
                 <Field label="Phone" type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
                 <Field label="Email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+                <Field label="Date of birth" type="date" value={form.dateOfBirth} onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })} />
+                {isMinor && (
+                  <div className="grid gap-3 rounded-md border border-gold/40 bg-gold/10 p-3">
+                    <p className="text-sm font-bold text-ink">Parent or guardian required</p>
+                    <Field
+                      label="Parent/guardian name"
+                      value={form.guardianName}
+                      onChange={(event) => setForm({ ...form, guardianName: event.target.value })}
+                    />
+                    <Field
+                      label="Parent/guardian phone"
+                      type="tel"
+                      value={form.guardianPhone}
+                      onChange={(event) => setForm({ ...form, guardianPhone: event.target.value })}
+                    />
+                    <Field
+                      label="Parent/guardian email"
+                      type="email"
+                      value={form.guardianEmail}
+                      onChange={(event) => setForm({ ...form, guardianEmail: event.target.value })}
+                    />
+                  </div>
+                )}
                 <Field
                   label="Skills/interests"
                   placeholder="kids, setup, greeting"
@@ -441,17 +615,8 @@ export default function VolunteerEventPage() {
                   onChange={(event) => setForm({ ...form, emergencyContact: event.target.value })}
                 />
                 <TextArea label="Notes" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
-                <label className="flex gap-3 rounded-md border border-ink/10 bg-paper p-3 text-sm font-semibold text-ink">
-                  <input
-                    className="mt-1 h-5 w-5 accent-moss"
-                    type="checkbox"
-                    checked={form.consentAcknowledged}
-                    onChange={(event) => setForm({ ...form, consentAcknowledged: event.target.checked })}
-                  />
-                  I acknowledge the volunteer consent and waiver for this event.
-                </label>
-                <Button className="bg-moss text-white" disabled={saving} onClick={saveProfile}>
-                  Save Profile
+                <Button className="bg-moss text-white" disabled={saving || !canOpenWaiver} onClick={openWaiverForProfile}>
+                  Review Waiver
                 </Button>
               </div>
             </section>

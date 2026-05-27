@@ -4,8 +4,16 @@ export type VolunteerProfile = {
   lastName: string;
   phone: string;
   email: string;
+  dateOfBirth: string;
   skills: string[];
   emergencyContact: string;
+  guardianName: string;
+  guardianPhone: string;
+  guardianEmail: string;
+  waiverSignerName: string;
+  waiverSignedBy: "volunteer" | "guardian" | "";
+  waiverAcknowledgedAt?: Date;
+  waiverTextVersion: string;
   notes: string;
   consentAcknowledged: boolean;
   browserTokenHash: string;

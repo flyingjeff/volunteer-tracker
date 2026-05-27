@@ -22,6 +22,10 @@ function toDate(value: unknown) {
   return value instanceof Timestamp ? value.toDate() : value instanceof Date ? value : new Date();
 }
 
+function withoutUndefined<T extends Record<string, unknown>>(value: T) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
+}
+
 function mapAttendance(id: string, data: Record<string, unknown>): AttendanceSession {
   return {
     id,
@@ -58,8 +62,16 @@ function mapVolunteer(id: string, data: Record<string, unknown>): VolunteerProfi
     lastName: String(data.lastName ?? ""),
     phone: String(data.phone ?? ""),
     email: String(data.email ?? ""),
+    dateOfBirth: String(data.dateOfBirth ?? ""),
     skills: Array.isArray(data.skills) ? data.skills.map(String) : [],
     emergencyContact: String(data.emergencyContact ?? ""),
+    guardianName: String(data.guardianName ?? ""),
+    guardianPhone: String(data.guardianPhone ?? ""),
+    guardianEmail: String(data.guardianEmail ?? ""),
+    waiverSignerName: String(data.waiverSignerName ?? ""),
+    waiverSignedBy: data.waiverSignedBy === "guardian" ? "guardian" : data.waiverSignedBy === "volunteer" ? "volunteer" : "",
+    waiverAcknowledgedAt: data.waiverAcknowledgedAt ? toDate(data.waiverAcknowledgedAt) : undefined,
+    waiverTextVersion: String(data.waiverTextVersion ?? ""),
     notes: String(data.notes ?? ""),
     consentAcknowledged: Boolean(data.consentAcknowledged),
     browserTokenHash: String(data.browserTokenHash ?? ""),
@@ -168,10 +180,10 @@ export async function upsertVolunteer(
     updatedAt: serverTimestamp()
   };
 
-  await setDoc(volunteerRef, {
+  await setDoc(volunteerRef, withoutUndefined({
     ...payload,
     ...(existing.exists() ? {} : { createdAt: serverTimestamp() })
-  }, { merge: true });
+  }), { merge: true });
   return tokenHash;
 }
 
@@ -182,12 +194,12 @@ export async function saveManagedVolunteer(
   const volunteerRef = doc(db, "volunteers", volunteerId);
   const existing = await getDoc(volunteerRef);
 
-  await setDoc(volunteerRef, {
+  await setDoc(volunteerRef, withoutUndefined({
     ...profile,
     browserTokenHash: volunteerId,
     updatedAt: serverTimestamp(),
     ...(existing.exists() ? {} : { createdAt: serverTimestamp() })
-  }, { merge: true });
+  }), { merge: true });
 
   return volunteerId;
 }

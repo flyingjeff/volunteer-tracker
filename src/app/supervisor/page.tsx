@@ -58,8 +58,14 @@ type VolunteerForm = {
   lastName: string;
   phone: string;
   email: string;
+  dateOfBirth: string;
   skills: string;
   emergencyContact: string;
+  guardianName: string;
+  guardianPhone: string;
+  guardianEmail: string;
+  waiverSignerName: string;
+  waiverSignedBy: "volunteer" | "guardian" | "";
   notes: string;
   consentAcknowledged: boolean;
 };
@@ -76,8 +82,14 @@ const emptyVolunteer: VolunteerForm = {
   lastName: "",
   phone: "",
   email: "",
+  dateOfBirth: "",
   skills: "",
   emergencyContact: "",
+  guardianName: "",
+  guardianPhone: "",
+  guardianEmail: "",
+  waiverSignerName: "",
+  waiverSignedBy: "",
   notes: "",
   consentAcknowledged: true
 };
@@ -199,7 +211,19 @@ export default function SupervisorPage() {
     const query = skillQuery.trim().toLowerCase();
     if (!query) return volunteers;
     return volunteers.filter((volunteer) =>
-      [volunteer.firstName, volunteer.lastName, volunteer.email, volunteer.phone, volunteer.notes, ...volunteer.skills]
+      [
+        volunteer.firstName,
+        volunteer.lastName,
+        volunteer.email,
+        volunteer.phone,
+        volunteer.dateOfBirth,
+        volunteer.guardianName,
+        volunteer.guardianPhone,
+        volunteer.guardianEmail,
+        volunteer.waiverSignerName,
+        volunteer.notes,
+        ...volunteer.skills
+      ]
         .join(" ")
         .toLowerCase()
         .includes(query)
@@ -252,8 +276,14 @@ export default function SupervisorPage() {
       lastName: volunteer.lastName,
       phone: volunteer.phone,
       email: volunteer.email,
+      dateOfBirth: volunteer.dateOfBirth,
       skills: volunteer.skills.join(", "),
       emergencyContact: volunteer.emergencyContact,
+      guardianName: volunteer.guardianName,
+      guardianPhone: volunteer.guardianPhone,
+      guardianEmail: volunteer.guardianEmail,
+      waiverSignerName: volunteer.waiverSignerName,
+      waiverSignedBy: volunteer.waiverSignedBy,
       notes: volunteer.notes,
       consentAcknowledged: volunteer.consentAcknowledged
     });
@@ -292,11 +322,18 @@ export default function SupervisorPage() {
       lastName: volunteerForm.lastName.trim(),
       phone: volunteerForm.phone.trim(),
       email: volunteerForm.email.trim(),
+      dateOfBirth: volunteerForm.dateOfBirth,
       skills: volunteerForm.skills
         .split(",")
         .map((skill) => skill.trim())
         .filter(Boolean),
       emergencyContact: volunteerForm.emergencyContact.trim(),
+      guardianName: volunteerForm.guardianName.trim(),
+      guardianPhone: volunteerForm.guardianPhone.trim(),
+      guardianEmail: volunteerForm.guardianEmail.trim(),
+      waiverSignerName: volunteerForm.waiverSignerName.trim(),
+      waiverSignedBy: volunteerForm.waiverSignedBy,
+      waiverTextVersion: volunteerForm.consentAcknowledged ? "renovation-safety-2026-05" : "",
       notes: volunteerForm.notes.trim(),
       consentAcknowledged: volunteerForm.consentAcknowledged
     };
@@ -448,14 +485,37 @@ export default function SupervisorPage() {
 
   function exportVolunteersCsv() {
     downloadCsv("volunteer-database.csv", [
-      ["First name", "Last name", "Email", "Phone", "Skills", "Emergency contact", "Notes", "Consent acknowledged"],
+      [
+        "First name",
+        "Last name",
+        "Email",
+        "Phone",
+        "Date of birth",
+        "Skills",
+        "Emergency contact",
+        "Parent/guardian name",
+        "Parent/guardian phone",
+        "Parent/guardian email",
+        "Waiver signer",
+        "Waiver signed by",
+        "Waiver acknowledged at",
+        "Notes",
+        "Consent acknowledged"
+      ],
       ...volunteers.map((volunteer) => [
         volunteer.firstName,
         volunteer.lastName,
         volunteer.email,
         volunteer.phone,
+        volunteer.dateOfBirth,
         volunteer.skills.join("; "),
         volunteer.emergencyContact,
+        volunteer.guardianName,
+        volunteer.guardianPhone,
+        volunteer.guardianEmail,
+        volunteer.waiverSignerName,
+        volunteer.waiverSignedBy,
+        volunteer.waiverAcknowledgedAt?.toISOString() ?? "",
         volunteer.notes,
         volunteer.consentAcknowledged ? "Yes" : "No"
       ])
@@ -1073,6 +1133,12 @@ export default function SupervisorPage() {
                             <Field label="Phone" type="tel" value={volunteerForm.phone} onChange={(event) => setVolunteerForm({ ...volunteerForm, phone: event.target.value })} />
                           </div>
                           <Field
+                            label="Date of birth"
+                            type="date"
+                            value={volunteerForm.dateOfBirth}
+                            onChange={(event) => setVolunteerForm({ ...volunteerForm, dateOfBirth: event.target.value })}
+                          />
+                          <Field
                             label="Skills/interests"
                             placeholder="kids, setup, greeting"
                             value={volunteerForm.skills}
@@ -1083,6 +1149,50 @@ export default function SupervisorPage() {
                             value={volunteerForm.emergencyContact}
                             onChange={(event) => setVolunteerForm({ ...volunteerForm, emergencyContact: event.target.value })}
                           />
+                          <div className="grid gap-3 rounded-md border border-ink/10 bg-white p-3">
+                            <p className="text-sm font-bold text-ink">Parent/guardian and waiver</p>
+                            <Field
+                              label="Parent/guardian name"
+                              value={volunteerForm.guardianName}
+                              onChange={(event) => setVolunteerForm({ ...volunteerForm, guardianName: event.target.value })}
+                            />
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <Field
+                                label="Parent/guardian phone"
+                                type="tel"
+                                value={volunteerForm.guardianPhone}
+                                onChange={(event) => setVolunteerForm({ ...volunteerForm, guardianPhone: event.target.value })}
+                              />
+                              <Field
+                                label="Parent/guardian email"
+                                type="email"
+                                value={volunteerForm.guardianEmail}
+                                onChange={(event) => setVolunteerForm({ ...volunteerForm, guardianEmail: event.target.value })}
+                              />
+                            </div>
+                            <Field
+                              label="Waiver signer"
+                              value={volunteerForm.waiverSignerName}
+                              onChange={(event) => setVolunteerForm({ ...volunteerForm, waiverSignerName: event.target.value })}
+                            />
+                            <label className="grid gap-1.5 text-sm font-semibold text-ink">
+                              Signed by
+                              <select
+                                className="focus-ring min-h-11 rounded-md border border-ink/15 bg-white px-3 text-base font-medium text-ink"
+                                value={volunteerForm.waiverSignedBy}
+                                onChange={(event) =>
+                                  setVolunteerForm({
+                                    ...volunteerForm,
+                                    waiverSignedBy: event.target.value === "guardian" ? "guardian" : event.target.value === "volunteer" ? "volunteer" : ""
+                                  })
+                                }
+                              >
+                                <option value="">Not recorded</option>
+                                <option value="volunteer">Volunteer</option>
+                                <option value="guardian">Parent/guardian</option>
+                              </select>
+                            </label>
+                          </div>
                           <TextArea label="Notes" value={volunteerForm.notes} onChange={(event) => setVolunteerForm({ ...volunteerForm, notes: event.target.value })} />
                           <label className="flex items-center gap-3 rounded-md border border-ink/10 bg-white p-3 text-sm font-semibold text-ink">
                             <input
@@ -1112,11 +1222,13 @@ export default function SupervisorPage() {
                         </div>
 
                         <div className="max-h-[42rem] overflow-auto">
-                          <table className="w-full min-w-[48rem] border-separate border-spacing-y-2 text-left text-sm">
+                          <table className="w-full min-w-[62rem] border-separate border-spacing-y-2 text-left text-sm">
                             <thead className="text-xs uppercase tracking-[0.12em] text-ink/45">
                               <tr>
                                 <th>Name</th>
                                 <th>Contact</th>
+                                <th>Age/Guardian</th>
+                                <th>Waiver</th>
                                 <th>Skills</th>
                                 <th>Notes</th>
                                 <th className="text-right">Actions</th>
@@ -1137,6 +1249,21 @@ export default function SupervisorPage() {
                                     <p>{volunteer.email || "No email"}</p>
                                     <p className="mt-1">{volunteer.phone || "No phone"}</p>
                                     {volunteer.emergencyContact && <p className="mt-2 text-xs text-ink/55">Emergency: {volunteer.emergencyContact}</p>}
+                                  </td>
+                                  <td className="p-3 font-semibold text-ink/70">
+                                    <p>{volunteer.dateOfBirth || "No DOB"}</p>
+                                    {volunteer.guardianName && <p className="mt-2 text-xs text-ink/55">Guardian: {volunteer.guardianName}</p>}
+                                    {volunteer.guardianPhone && <p className="mt-1 text-xs text-ink/55">{volunteer.guardianPhone}</p>}
+                                    {volunteer.guardianEmail && <p className="mt-1 text-xs text-ink/55">{volunteer.guardianEmail}</p>}
+                                  </td>
+                                  <td className="p-3 font-semibold text-ink/70">
+                                    <p>{volunteer.waiverSignerName || "No signer"}</p>
+                                    <p className="mt-1 text-xs uppercase tracking-[0.12em] text-ink/45">{volunteer.waiverSignedBy || "Not recorded"}</p>
+                                    {volunteer.waiverAcknowledgedAt && (
+                                      <p className="mt-1 text-xs text-ink/55">
+                                        {volunteer.waiverAcknowledgedAt.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}
+                                      </p>
+                                    )}
                                   </td>
                                   <td className="p-3">
                                     <div className="flex flex-wrap gap-1.5">
@@ -1188,7 +1315,6 @@ function Metric({ title, value }: { title: string; value: string }) {
     </div>
   );
 }
-
 
 function EventQrImage({ value, alt, className }: { value: string; alt: string; className: string }) {
   const [src, setSrc] = useState("");

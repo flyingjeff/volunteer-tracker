@@ -25,8 +25,16 @@ QR codes can point to `/e/{eventId}` in production. Firebase Hosting rewrites th
   lastName: string;
   phone: string;
   email: string;
+  dateOfBirth: string; // yyyy-mm-dd
   skills: string[];
   emergencyContact: string;
+  guardianName: string;
+  guardianPhone: string;
+  guardianEmail: string;
+  waiverSignerName: string;
+  waiverSignedBy: "volunteer" | "guardian" | "";
+  waiverAcknowledgedAt?: Timestamp;
+  waiverTextVersion: string;
   notes: string;
   consentAcknowledged: boolean;
   browserTokenHash: string;
