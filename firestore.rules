@@ -87,6 +87,8 @@ service cloud.firestore {
           || request.resource.data.kind == 'task-assigned'
           || request.resource.data.kind == 'task-unassigned'
           || request.resource.data.kind == 'task-joined'
+          || request.resource.data.kind == 'task-complete'
+          || request.resource.data.kind == 'volunteer-created'
         )
         && request.resource.data.message is string;
       allow read, update, delete: if isSupervisorDomain();

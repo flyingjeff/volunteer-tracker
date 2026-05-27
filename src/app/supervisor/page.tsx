@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { CalendarPlus, ClipboardList, Copy, Download, LogIn, LogOut, Pencil, Plus, QrCode, Search, ShieldCheck, Trash2, UsersRound, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Bell, BellRing, CalendarPlus, ClipboardList, Copy, Download, LogIn, LogOut, Pencil, Plus, QrCode, Search, ShieldCheck, Trash2, UsersRound, X } from "lucide-react";
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
 import QRCode from "qrcode";
 import { Button, Field, TextArea } from "@/components/ui";
@@ -51,6 +51,13 @@ type EventForm = {
 };
 
 type SupervisorView = "tasks" | "attendance" | "volunteers";
+
+type SupervisorNotification = {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: Date;
+};
 
 type VolunteerForm = {
   id?: string;
@@ -127,9 +134,15 @@ export default function SupervisorPage() {
   const [copiedEventId, setCopiedEventId] = useState("");
   const [activeView, setActiveView] = useState<SupervisorView>("tasks");
   const [eventMenuOpen, setEventMenuOpen] = useState(false);
+  const [notifications, setNotifications] = useState<SupervisorNotification[]>([]);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
   const [errorMessage, setErrorMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [savingEvent, setSavingEvent] = useState(false);
+  const seenActivityLogIds = useRef<Set<string>>(new Set());
+  const activityLogsReady = useRef(false);
+  const seenFeedbackIds = useRef<Set<string>>(new Set());
+  const feedbackReady = useRef(false);
   const setupComplete = configured && Boolean(supervisorDomain);
   const userEmail = user?.email?.toLowerCase() ?? "";
   const isAuthorizedSupervisor = Boolean(user && supervisorDomain && userEmail.endsWith(`@${supervisorDomain}`));
@@ -148,6 +161,15 @@ export default function SupervisorPage() {
       setAuthReady(true);
     });
   }, [setupComplete]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      return;
+    }
+
+    setNotificationPermission(Notification.permission);
+  }, []);
 
   useEffect(() => {
     if (!hasSupervisorAccess) return;
@@ -180,6 +202,10 @@ export default function SupervisorPage() {
   useEffect(() => {
     if (!selectedEventId || typeof window === "undefined") return;
     window.localStorage.setItem("selectedEventId", selectedEventId);
+    seenActivityLogIds.current = new Set();
+    activityLogsReady.current = false;
+    seenFeedbackIds.current = new Set();
+    feedbackReady.current = false;
   }, [selectedEventId]);
 
   useEffect(() => {
@@ -231,6 +257,81 @@ export default function SupervisorPage() {
   }, [skillQuery, volunteers]);
 
   const totalMinutes = history.reduce((sum, item) => sum + (item.totalMinutes ?? 0), 0);
+
+  function pushSupervisorNotification(title: string, body: string) {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setNotifications((items) => [{ id, title, body, createdAt: new Date() }, ...items].slice(0, 5));
+
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+      new Notification(title, { body });
+    }
+
+    window.setTimeout(() => {
+      setNotifications((items) => items.filter((item) => item.id !== id));
+    }, 9000);
+  }
+
+  async function requestNotificationPermission() {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+  }
+
+  useEffect(() => {
+    if (!hasSupervisorAccess || !selectedEventId) return;
+    const currentIds = new Set(activityLogs.map((item) => item.id));
+
+    if (!activityLogsReady.current) {
+      seenActivityLogIds.current = currentIds;
+      activityLogsReady.current = true;
+      return;
+    }
+
+    const newLogs = activityLogs
+      .filter((item) => !seenActivityLogIds.current.has(item.id))
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    newLogs.forEach((log) => {
+      if (log.kind === "check-in") {
+        pushSupervisorNotification("Volunteer checked in", log.message);
+      }
+
+      if (log.kind === "volunteer-created") {
+        pushSupervisorNotification("New volunteer added", log.message);
+      }
+
+      if (log.kind === "task-complete") {
+        pushSupervisorNotification("Task completed", log.message);
+      }
+    });
+
+    seenActivityLogIds.current = currentIds;
+  }, [activityLogs, hasSupervisorAccess, selectedEventId]);
+
+  useEffect(() => {
+    if (!hasSupervisorAccess || !selectedEventId) return;
+    const currentIds = new Set(feedback.map((item) => item.id));
+
+    if (!feedbackReady.current) {
+      seenFeedbackIds.current = currentIds;
+      feedbackReady.current = true;
+      return;
+    }
+
+    const newRequests = feedback
+      .filter((item) => !seenFeedbackIds.current.has(item.id) && item.kind === "more-tasks-request")
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    newRequests.forEach((item) => {
+      pushSupervisorNotification("Volunteer requested a task", `${item.volunteerName}: ${item.message}`);
+    });
+
+    seenFeedbackIds.current = currentIds;
+  }, [feedback, hasSupervisorAccess, selectedEventId]);
 
   async function handleSignIn() {
     if (!setupComplete) return;
@@ -342,6 +443,17 @@ export default function SupervisorPage() {
       if (hasSupervisorAccess) {
         await saveManagedVolunteer(volunteerId, profile);
         if (profile.email || profile.phone) await saveVolunteerLookups(profile.email, profile.phone, volunteerId);
+        if (!volunteerForm.id && selectedEventId) {
+          const name = `${profile.firstName} ${profile.lastName}`.trim();
+          await addActivityLog({
+            eventId: selectedEventId,
+            siteId,
+            kind: "volunteer-created",
+            volunteerId,
+            volunteerName: name,
+            message: `${name} was added to the volunteer database.`
+          });
+        }
       }
       setVolunteerForm(emptyVolunteer);
       setSelectedVolunteerId("");
@@ -402,6 +514,17 @@ export default function SupervisorPage() {
 
         if (changes.assignedVolunteerIds) {
           await logAssignmentChanges(task, changes.assignedVolunteerIds);
+        }
+
+        if (changes.status === "complete" && task.status !== "complete") {
+          await addActivityLog({
+            eventId: task.eventId,
+            siteId: task.siteId,
+            kind: "task-complete",
+            taskId: task.id,
+            taskTitle: task.title,
+            message: `${task.title} was marked complete.`
+          });
         }
       }
       setTasks((items) => items.map((item) => (item.id === task.id ? next : item)));
@@ -596,10 +719,27 @@ export default function SupervisorPage() {
           </div>
           {setupComplete ? (
             user ? (
-              <Button className="bg-white text-ink" onClick={() => signOut(auth)}>
-                <LogOut size={18} />
-                Sign out
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  className="bg-white/10 text-white"
+                  disabled={notificationPermission === "unsupported" || notificationPermission === "denied"}
+                  title={
+                    notificationPermission === "denied"
+                      ? "Browser notifications are blocked"
+                      : notificationPermission === "granted"
+                        ? "Browser notifications enabled"
+                        : "Enable browser notifications"
+                  }
+                  onClick={requestNotificationPermission}
+                >
+                  {notificationPermission === "granted" ? <BellRing size={18} /> : <Bell size={18} />}
+                  {notificationPermission === "granted" ? "Notifications On" : "Enable Notifications"}
+                </Button>
+                <Button className="bg-white text-ink" onClick={() => signOut(auth)}>
+                  <LogOut size={18} />
+                  Sign out
+                </Button>
+              </div>
             ) : (
               <Button className="bg-gold text-ink" onClick={handleSignIn}>
                 <LogIn size={18} />
@@ -614,6 +754,28 @@ export default function SupervisorPage() {
         {errorMessage && (
           <div className="mt-4 rounded-md border border-clay/30 bg-clay/10 p-3 text-sm font-semibold text-clay">
             {errorMessage}
+          </div>
+        )}
+
+        {notifications.length > 0 && (
+          <div className="fixed right-4 top-4 z-[60] grid w-[min(24rem,calc(100vw-2rem))] gap-2">
+            {notifications.map((item) => (
+              <article key={item.id} className="rounded-lg border border-ink/10 bg-white p-3 shadow-soft">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-ink">{item.title}</p>
+                    <p className="mt-1 text-sm font-semibold leading-5 text-ink/65">{item.body}</p>
+                  </div>
+                  <button
+                    className="focus-ring rounded-md p-1 text-ink/45 hover:bg-paper hover:text-ink"
+                    title="Dismiss notification"
+                    onClick={() => setNotifications((items) => items.filter((notification) => notification.id !== item.id))}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </article>
+            ))}
           </div>
         )}
 

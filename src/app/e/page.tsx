@@ -5,6 +5,7 @@ import { CheckCircle2, Clock, ClipboardList, LogOut, Send, UserRoundPlus } from 
 import { Button, Field, TextArea } from "@/components/ui";
 import {
   addTaskFeedback,
+  addActivityLog,
   checkIn,
   checkOut,
   findVolunteerByLookup,
@@ -233,6 +234,14 @@ export default function VolunteerEventPage() {
       if (configured) {
         const id = await upsertVolunteer(tokenHash, profile);
         setVolunteer({ ...profile, id, browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() });
+        await addActivityLog({
+          eventId,
+          siteId,
+          kind: "volunteer-created",
+          volunteerId: id,
+          volunteerName: `${profile.firstName} ${profile.lastName}`.trim(),
+          message: `${profile.firstName} ${profile.lastName}`.trim() + " created a volunteer profile."
+        });
         if (profile.email || profile.phone) {
           try {
             await saveProfileLookups(profile.email, profile.phone, id);

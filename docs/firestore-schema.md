@@ -114,7 +114,7 @@ Volunteers can also add themselves to an in-progress task. Firestore rules restr
 {
   eventId: string;
   siteId: string;
-  kind: "check-in" | "check-out" | "task-assigned" | "task-unassigned" | "task-joined";
+  kind: "check-in" | "check-out" | "task-assigned" | "task-unassigned" | "task-joined" | "task-complete" | "volunteer-created";
   volunteerId?: string;
   volunteerName?: string;
   taskId?: string;
@@ -124,7 +124,7 @@ Volunteers can also add themselves to an in-progress task. Firestore rules restr
 }
 ```
 
-The app writes this export-friendly ledger whenever a volunteer checks in, checks out, joins an open task, or is assigned/unassigned by a supervisor. Supervisors can export the activity log as CSV from the attendance view.
+The app writes this export-friendly ledger whenever a volunteer is added, checks in, checks out, joins an open task, completes a task, or is assigned/unassigned by a supervisor. Supervisors can export the activity log as CSV from the attendance view, and the supervisor dashboard uses new activity and task-feedback records for live notifications.
 
 ## Index Notes
 

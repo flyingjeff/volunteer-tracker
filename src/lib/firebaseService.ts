@@ -119,7 +119,9 @@ function mapActivityLog(id: string, data: Record<string, unknown>): ActivityLog 
       kind === "check-out" ||
       kind === "task-assigned" ||
       kind === "task-unassigned" ||
-      kind === "task-joined"
+      kind === "task-joined" ||
+      kind === "task-complete" ||
+      kind === "volunteer-created"
         ? kind
         : "check-in",
     volunteerId: data.volunteerId ? String(data.volunteerId) : undefined,
