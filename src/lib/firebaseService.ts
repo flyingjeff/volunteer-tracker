@@ -66,6 +66,7 @@ function mapVolunteer(id: string, data: Record<string, unknown>): VolunteerProfi
     email: String(data.email ?? ""),
     dateOfBirth: String(data.dateOfBirth ?? ""),
     skills: Array.isArray(data.skills) ? data.skills.map(String) : [],
+    tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
     emergencyContact: String(data.emergencyContact ?? ""),
     guardianName: String(data.guardianName ?? ""),
     guardianPhone: String(data.guardianPhone ?? ""),
@@ -216,7 +217,34 @@ export async function saveVolunteerLookup(lookupId: string, volunteerId: string)
 }
 
 export async function deleteVolunteer(volunteerId: string) {
-  await deleteDoc(doc(db, "volunteers", volunteerId));
+  const batch = writeBatch(db);
+
+  const taskSnapshots = await getDocs(query(collection(db, "tasks"), where("assignedVolunteerIds", "array-contains", volunteerId)));
+  taskSnapshots.docs.forEach((item) => {
+    const task = mapTask(item.id, item.data());
+    batch.update(item.ref, {
+      assignedVolunteerIds: task.assignedVolunteerIds.filter((id) => id !== volunteerId),
+      updatedAt: serverTimestamp()
+    });
+  });
+
+  const lookupSnapshots = await getDocs(query(collection(db, "volunteerLookups"), where("volunteerId", "==", volunteerId)));
+  lookupSnapshots.docs.forEach((item) => batch.delete(item.ref));
+
+  const attendanceSnapshots = await getDocs(query(collection(db, "attendanceSessions"), where("volunteerId", "==", volunteerId)));
+  const checkedOutAt = new Date();
+  attendanceSnapshots.docs.forEach((item) => {
+    const session = mapAttendance(item.id, item.data());
+    if (session.status !== "checked-in") return;
+    batch.update(item.ref, {
+      status: "checked-out",
+      checkedOutAt,
+      totalMinutes: Math.max(0, Math.round((checkedOutAt.getTime() - session.checkedInAt.getTime()) / 60000))
+    });
+  });
+
+  batch.delete(doc(db, "volunteers", volunteerId));
+  await batch.commit();
 }
 
 export async function mergeVolunteerProfileRecords(sourceVolunteerId: string, targetVolunteer: VolunteerProfile) {

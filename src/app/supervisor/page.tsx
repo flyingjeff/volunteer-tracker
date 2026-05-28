@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, BellRing, CalendarPlus, ClipboardList, Copy, Download, LogIn, LogOut, MonitorUp, Pencil, Plus, QrCode, Search, ShieldCheck, Trash2, UsersRound, X } from "lucide-react";
+import { Bell, BellRing, CalendarPlus, ClipboardList, Copy, Download, LogIn, LogOut, Merge, MonitorUp, Pencil, Plus, QrCode, Search, ShieldCheck, Tag, Trash2, UsersRound, X } from "lucide-react";
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
 import QRCode from "qrcode";
 import { Button, Field, TextArea } from "@/components/ui";
@@ -9,6 +9,7 @@ import { KanbanBoard } from "@/components/KanbanBoard";
 import { auth, googleProvider, isFirebaseConfigured } from "@/lib/firebase";
 import {
   addActivityLog,
+  checkOut,
   deleteEvent,
   deleteTask,
   deleteVolunteer,
@@ -68,6 +69,7 @@ type VolunteerForm = {
   email: string;
   dateOfBirth: string;
   skills: string;
+  tags: string;
   emergencyContact: string;
   guardianName: string;
   guardianPhone: string;
@@ -92,6 +94,7 @@ const emptyVolunteer: VolunteerForm = {
   email: "",
   dateOfBirth: "",
   skills: "",
+  tags: "",
   emergencyContact: "",
   guardianName: "",
   guardianPhone: "",
@@ -137,6 +140,7 @@ export default function SupervisorPage() {
   const [copiedEventId, setCopiedEventId] = useState("");
   const [activeView, setActiveView] = useState<SupervisorView>("tasks");
   const [eventMenuOpen, setEventMenuOpen] = useState(false);
+  const [eventFormOpen, setEventFormOpen] = useState(false);
   const [notifications, setNotifications] = useState<SupervisorNotification[]>([]);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
   const [errorMessage, setErrorMessage] = useState("");
@@ -251,13 +255,31 @@ export default function SupervisorPage() {
         volunteer.guardianEmail,
         volunteer.waiverSignerName,
         volunteer.notes,
-        ...volunteer.skills
+        ...volunteer.skills,
+        ...volunteer.tags
       ]
         .join(" ")
         .toLowerCase()
         .includes(query)
     );
   }, [skillQuery, volunteers]);
+
+  const duplicateCandidates = useMemo(() => {
+    const byKey = new Map<string, VolunteerProfile[]>();
+    volunteers.forEach((volunteer) => {
+      const keys = [
+        volunteer.email.trim().toLowerCase() ? `email:${volunteer.email.trim().toLowerCase()}` : "",
+        volunteer.phone.replace(/\D/g, "") ? `phone:${volunteer.phone.replace(/\D/g, "")}` : "",
+        `${volunteer.firstName} ${volunteer.lastName} ${volunteer.dateOfBirth}`.trim().toLowerCase()
+      ].filter(Boolean);
+      keys.forEach((key) => byKey.set(key, [...(byKey.get(key) ?? []), volunteer]));
+    });
+
+    return Array.from(byKey.entries())
+      .filter(([, matches]) => matches.length > 1)
+      .slice(0, 6)
+      .map(([key, matches]) => ({ key, matches }));
+  }, [volunteers]);
 
   const totalMinutes = history.reduce((sum, item) => sum + (item.totalMinutes ?? 0), 0);
 
@@ -382,6 +404,7 @@ export default function SupervisorPage() {
       email: volunteer.email,
       dateOfBirth: volunteer.dateOfBirth,
       skills: volunteer.skills.join(", "),
+      tags: volunteer.tags.join(", "),
       emergencyContact: volunteer.emergencyContact,
       guardianName: volunteer.guardianName,
       guardianPhone: volunteer.guardianPhone,
@@ -431,6 +454,10 @@ export default function SupervisorPage() {
         .split(",")
         .map((skill) => skill.trim())
         .filter(Boolean),
+      tags: volunteerForm.tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
       emergencyContact: volunteerForm.emergencyContact.trim(),
       guardianName: volunteerForm.guardianName.trim(),
       guardianPhone: volunteerForm.guardianPhone.trim(),
@@ -468,6 +495,10 @@ export default function SupervisorPage() {
   }
 
   async function handleDeleteVolunteer(volunteerId: string) {
+    const volunteer = volunteers.find((item) => item.id === volunteerId);
+    const name = volunteer ? `${volunteer.firstName} ${volunteer.lastName}`.trim() : "this volunteer";
+    if (!window.confirm(`Delete ${name}'s profile? This removes the profile, lookup recovery entries, active task assignments, and checks them out if they are currently checked in.`)) return;
+
     setErrorMessage("");
     setSaving(true);
 
@@ -500,6 +531,7 @@ export default function SupervisorPage() {
       email: target.email || source.email,
       dateOfBirth: target.dateOfBirth || source.dateOfBirth,
       skills: Array.from(new Set([...target.skills, ...source.skills])),
+      tags: Array.from(new Set([...target.tags, ...source.tags])),
       emergencyContact: target.emergencyContact || source.emergencyContact,
       guardianName: target.guardianName || source.guardianName,
       guardianPhone: target.guardianPhone || source.guardianPhone,
@@ -539,6 +571,19 @@ export default function SupervisorPage() {
     }
   }
 
+  async function handleSupervisorCheckOut(session: AttendanceSession) {
+    setErrorMessage("");
+    setSaving(true);
+
+    try {
+      if (hasSupervisorAccess) await checkOut(session);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to check out volunteer.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSaveEvent() {
     if (!eventForm.name.trim() || !eventForm.location.trim() || !eventForm.startsAt) return;
     setErrorMessage("");
@@ -555,6 +600,7 @@ export default function SupervisorPage() {
       setPendingEventId("");
       setActiveView("tasks");
       setEventForm(emptyEvent);
+      setEventFormOpen(false);
       setEventMenuOpen(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to save event.");
@@ -673,6 +719,7 @@ export default function SupervisorPage() {
         "Phone",
         "Date of birth",
         "Skills",
+        "Tags",
         "Emergency contact",
         "Parent/guardian name",
         "Parent/guardian phone",
@@ -690,6 +737,7 @@ export default function SupervisorPage() {
         volunteer.phone,
         volunteer.dateOfBirth,
         volunteer.skills.join("; "),
+        volunteer.tags.join("; "),
         volunteer.emergencyContact,
         volunteer.guardianName,
         volunteer.guardianPhone,
@@ -751,6 +799,7 @@ export default function SupervisorPage() {
       setSelectedEventId(eventId);
       setEventMenuOpen(false);
       setEventForm(emptyEvent);
+      setEventFormOpen(false);
       return;
     }
 
@@ -764,6 +813,7 @@ export default function SupervisorPage() {
     setActiveView("tasks");
     setEventMenuOpen(false);
     setEventForm(emptyEvent);
+    setEventFormOpen(false);
   }
 
   const volunteerManagementConsole = (
@@ -793,6 +843,42 @@ export default function SupervisorPage() {
           </Button>
         </div>
       </div>
+
+      {duplicateCandidates.length > 0 && (
+        <div className="mt-4 grid gap-3 rounded-md border border-gold/40 bg-gold/10 p-3">
+          <div className="flex items-center gap-2">
+            <Merge className="text-ink" size={18} />
+            <h3 className="font-black">Possible duplicates</h3>
+          </div>
+          <div className="grid gap-2">
+            {duplicateCandidates.map(({ key, matches }) => (
+              <article key={key} className="rounded-md border border-ink/10 bg-white p-3">
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-ink/45">{key.replace("email:", "Email: ").replace("phone:", "Phone: ")}</p>
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                  {matches.map((volunteer) => (
+                    <div key={volunteer.id} className="flex items-center justify-between gap-3 rounded-md bg-paper p-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black">
+                          {volunteer.firstName} {volunteer.lastName}
+                        </p>
+                        <p className="truncate text-xs font-semibold text-ink/55">{volunteer.email || volunteer.phone || volunteer.id}</p>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <Button className="min-h-9 bg-white px-2 text-ink" title="Mark as duplicate" onClick={() => setMergeSourceId(volunteer.id)}>
+                          Duplicate
+                        </Button>
+                        <Button className="min-h-9 bg-ink px-2 text-white" title="Keep this profile" onClick={() => setMergeTargetId(volunteer.id)}>
+                          Keep
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mt-4 grid gap-3 rounded-md border border-ink/10 bg-paper p-3 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
         <label className="grid gap-1.5 text-sm font-semibold text-ink">
@@ -828,6 +914,7 @@ export default function SupervisorPage() {
           </select>
         </label>
         <Button className="bg-ink text-white" disabled={saving || !mergeSourceId || !mergeTargetId || mergeSourceId === mergeTargetId} onClick={handleMergeVolunteers}>
+          <Merge size={17} />
           Merge Profiles
         </Button>
       </div>
@@ -849,6 +936,12 @@ export default function SupervisorPage() {
             placeholder="kids, setup, greeting"
             value={volunteerForm.skills}
             onChange={(event) => setVolunteerForm({ ...volunteerForm, skills: event.target.value })}
+          />
+          <Field
+            label="Tags"
+            placeholder="supervisor, youth, follow-up"
+            value={volunteerForm.tags}
+            onChange={(event) => setVolunteerForm({ ...volunteerForm, tags: event.target.value })}
           />
           <Field
             label="Emergency contact"
@@ -917,7 +1010,7 @@ export default function SupervisorPage() {
                 <th>Contact</th>
                 <th>Age/Guardian</th>
                 <th>Waiver</th>
-                <th>Skills</th>
+                <th>Skills & Tags</th>
                 <th>Notes</th>
                 <th className="text-right">Actions</th>
               </tr>
@@ -964,6 +1057,12 @@ export default function SupervisorPage() {
                           </span>
                         ))
                       )}
+                      {volunteer.tags.map((tag) => (
+                        <span key={tag} className="inline-flex items-center gap-1 rounded bg-gold/25 px-2 py-1 text-xs font-bold text-ink">
+                          <Tag size={12} />
+                          {tag}
+                        </span>
+                      ))}
                     </div>
                   </td>
                   <td className="max-w-xs p-3 text-sm font-semibold leading-6 text-ink/65">{volunteer.notes || "No notes"}</td>
@@ -1114,50 +1213,91 @@ export default function SupervisorPage() {
             {eventMenuOpen && (
               <div className="fixed inset-0 z-40 overflow-y-auto bg-ink/55 px-4 py-6">
                 <section className="mx-auto grid w-full max-w-7xl gap-4 rounded-lg bg-white p-4 shadow-soft lg:grid-cols-[0.65fr_1fr]">
-                  <div className="rounded-md border border-ink/10 bg-paper p-4">
-                    <div className="flex items-center gap-2">
-                      <CalendarPlus className="text-moss" />
-                      <h2 className="text-xl font-black">{eventForm.id ? "Edit event" : "Add event"}</h2>
+                  <div className="flex flex-col gap-3 rounded-md bg-ink p-4 text-white sm:flex-row sm:items-center sm:justify-between lg:col-span-2">
+                    <div>
+                      <h2 className="text-2xl font-black">Event & Volunteer Management</h2>
+                      <p className="mt-1 text-sm font-semibold text-white/65">Switch events, maintain QR links, and manage volunteer profiles.</p>
                     </div>
-                    <div className="mt-4 grid gap-3">
-                      <Field label="Event name" value={eventForm.name} onChange={(event) => setEventForm({ ...eventForm, name: event.target.value })} />
-                      <Field
-                        label="Location"
-                        value={eventForm.location}
-                        onChange={(event) => setEventForm({ ...eventForm, location: event.target.value })}
-                      />
-                      <Field
-                        label="Start date and time"
-                        type="datetime-local"
-                        value={eventForm.startsAt}
-                        onChange={(event) => setEventForm({ ...eventForm, startsAt: event.target.value })}
-                      />
-                      <label className="flex items-center gap-3 rounded-md border border-ink/10 bg-white p-3 text-sm font-semibold text-ink">
-                        <input
-                          className="h-5 w-5 accent-moss"
-                          type="checkbox"
-                          checked={eventForm.active}
-                          onChange={(event) => setEventForm({ ...eventForm, active: event.target.checked })}
+                    <Button
+                      className="bg-white text-ink"
+                      onClick={() => {
+                        setEventMenuOpen(false);
+                        setEventForm(emptyEvent);
+                        setEventFormOpen(false);
+                      }}
+                    >
+                      <X size={18} />
+                      Close Management
+                    </Button>
+                  </div>
+
+                  {eventFormOpen ? (
+                    <div className="rounded-md border border-ink/10 bg-paper p-4">
+                      <div className="flex items-center gap-2">
+                        <CalendarPlus className="text-moss" />
+                        <h2 className="text-xl font-black">{eventForm.id ? "Edit event" : "Add event"}</h2>
+                      </div>
+                      <div className="mt-4 grid gap-3">
+                        <Field label="Event name" value={eventForm.name} onChange={(event) => setEventForm({ ...eventForm, name: event.target.value })} />
+                        <Field
+                          label="Location"
+                          value={eventForm.location}
+                          onChange={(event) => setEventForm({ ...eventForm, location: event.target.value })}
                         />
-                        Active event
-                      </label>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <Button className="bg-moss text-white" disabled={savingEvent} onClick={handleSaveEvent}>
-                          <Plus size={18} />
-                          {eventForm.id ? "Update Event" : "Add Event"}
-                        </Button>
-                        <Button
-                          className="bg-white text-ink"
-                          onClick={() => {
-                            setEventForm(emptyEvent);
-                            setEventMenuOpen(false);
-                          }}
-                        >
-                          Close
-                        </Button>
+                        <Field
+                          label="Start date and time"
+                          type="datetime-local"
+                          value={eventForm.startsAt}
+                          onChange={(event) => setEventForm({ ...eventForm, startsAt: event.target.value })}
+                        />
+                        <label className="flex items-center gap-3 rounded-md border border-ink/10 bg-white p-3 text-sm font-semibold text-ink">
+                          <input
+                            className="h-5 w-5 accent-moss"
+                            type="checkbox"
+                            checked={eventForm.active}
+                            onChange={(event) => setEventForm({ ...eventForm, active: event.target.checked })}
+                          />
+                          Active event
+                        </label>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Button className="bg-moss text-white" disabled={savingEvent} onClick={handleSaveEvent}>
+                            <Plus size={18} />
+                            {eventForm.id ? "Update Event" : "Add Event"}
+                          </Button>
+                          <Button
+                            className="bg-white text-ink"
+                            onClick={() => {
+                              setEventForm(emptyEvent);
+                              setEventFormOpen(false);
+                            }}
+                          >
+                            <X size={18} />
+                            Cancel
+                          </Button>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="grid content-start gap-3 rounded-md border border-ink/10 bg-paper p-4">
+                      <div className="flex items-center gap-2">
+                        <CalendarPlus className="text-moss" />
+                        <h2 className="text-xl font-black">Events</h2>
+                      </div>
+                      <p className="text-sm font-semibold leading-6 text-ink/65">
+                        Select an event from the list or open the event form when you need to create a new one.
+                      </p>
+                      <Button
+                        className="bg-moss text-white"
+                        onClick={() => {
+                          setEventForm(emptyEvent);
+                          setEventFormOpen(true);
+                        }}
+                      >
+                        <Plus size={18} />
+                        Add Event
+                      </Button>
+                    </div>
+                  )}
 
                   <div className="min-h-0 rounded-md border border-ink/10 bg-white p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1238,15 +1378,16 @@ export default function SupervisorPage() {
                                 <Button
                                   className="min-h-9 bg-white px-2 text-ink"
                                   title="Edit event"
-                                  onClick={() =>
+                                  onClick={() => {
                                     setEventForm({
                                       id: eventItem.id,
                                       name: eventItem.name,
                                       location: eventItem.location,
                                       startsAt: toDateTimeInputValue(eventItem.startsAt),
                                       active: eventItem.active
-                                    })
-                                  }
+                                    });
+                                    setEventFormOpen(true);
+                                  }}
                                 >
                                   <Pencil size={16} />
                                 </Button>
@@ -1280,7 +1421,13 @@ export default function SupervisorPage() {
                 <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink/70">
                   Open the event menu to choose an existing event or add a new one before managing attendance, tasks, and volunteer assignments.
                 </p>
-                <Button className="mx-auto mt-5 bg-moss text-white" onClick={() => setEventMenuOpen(true)}>
+                <Button
+                  className="mx-auto mt-5 bg-moss text-white"
+                  onClick={() => {
+                    setEventMenuOpen(true);
+                    setEventFormOpen(false);
+                  }}
+                >
                   <CalendarPlus size={18} />
                   Manage Events
                 </Button>
@@ -1330,9 +1477,15 @@ export default function SupervisorPage() {
                         <MonitorUp size={17} />
                         Status Board
                       </a>
-                      <Button className="bg-ink text-white" onClick={() => setEventMenuOpen(true)}>
+                      <Button
+                        className="bg-ink text-white"
+                        onClick={() => {
+                          setEventMenuOpen(true);
+                          setEventFormOpen(false);
+                        }}
+                      >
                         <CalendarPlus size={17} />
-                        Manage Events
+                        Manage Events & Volunteers
                       </Button>
                     </div>
                   </div>
@@ -1340,7 +1493,7 @@ export default function SupervisorPage() {
                     {[
                       { id: "tasks" as SupervisorView, label: "Tasks", icon: ClipboardList },
                       { id: "attendance" as SupervisorView, label: "Attendance", icon: UsersRound },
-                      { id: "volunteers" as SupervisorView, label: "Notes & Requests", icon: Search }
+                      { id: "volunteers" as SupervisorView, label: "Volunteers", icon: Search }
                     ].map((item) => {
                       const Icon = item.icon;
                       return (
@@ -1452,10 +1605,16 @@ export default function SupervisorPage() {
                           {attendance.map((item) => (
                             <article key={item.id} className="rounded-md border border-ink/10 bg-paper p-3">
                               <div className="flex items-center justify-between gap-3">
-                                <h3 className="font-black">{item.volunteerName}</h3>
-                                <span className="text-xs font-bold text-moss">
-                                  {item.checkedInAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                                </span>
+                                <div>
+                                  <h3 className="font-black">{item.volunteerName}</h3>
+                                  <p className="mt-1 text-xs font-bold text-moss">
+                                    Checked in {item.checkedInAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                                  </p>
+                                </div>
+                                <Button className="min-h-9 bg-white px-2 text-clay" disabled={saving} title="Check out volunteer" onClick={() => handleSupervisorCheckOut(item)}>
+                                  <LogOut size={16} />
+                                  Check Out
+                                </Button>
                               </div>
                             </article>
                           ))}
@@ -1548,6 +1707,8 @@ export default function SupervisorPage() {
                         )}
                       </div>
                     </section>
+
+                    {volunteerManagementConsole}
 
                     {false && (
                     <section className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">

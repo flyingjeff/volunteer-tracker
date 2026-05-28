@@ -6,6 +6,7 @@ export type VolunteerProfile = {
   email: string;
   dateOfBirth: string;
   skills: string[];
+  tags: string[];
   emergencyContact: string;
   guardianName: string;
   guardianPhone: string;

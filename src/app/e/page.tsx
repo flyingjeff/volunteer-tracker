@@ -218,6 +218,7 @@ export default function VolunteerEventPage() {
         .split(",")
         .map((skill) => skill.trim())
         .filter(Boolean),
+      tags: [],
       emergencyContact: form.emergencyContact.trim(),
       guardianName: isMinor ? form.guardianName.trim() : "",
       guardianPhone: isMinor ? form.guardianPhone.trim() : "",
@@ -310,34 +311,15 @@ export default function VolunteerEventPage() {
         return;
       }
 
-      const profile = {
-        firstName: existing.firstName,
-        lastName: existing.lastName,
-        phone: existing.phone,
-        email: existing.email,
-        dateOfBirth: existing.dateOfBirth,
-        skills: existing.skills,
-        emergencyContact: existing.emergencyContact,
-        guardianName: existing.guardianName,
-        guardianPhone: existing.guardianPhone,
-        guardianEmail: existing.guardianEmail,
-        waiverSignerName: existing.waiverSignerName,
-        waiverSignedBy: existing.waiverSignedBy,
-        waiverAcknowledgedAt: existing.waiverAcknowledgedAt,
-        waiverTextVersion: existing.waiverTextVersion,
-        notes: existing.notes,
-        consentAcknowledged: existing.consentAcknowledged
-      };
-      const id = await upsertVolunteer(tokenHash, profile);
-      if (profile.email || profile.phone) {
+      if (existing.email || existing.phone) {
         try {
-          await saveProfileLookups(profile.email, profile.phone, id);
+          await saveProfileLookups(existing.email, existing.phone, existing.id);
         } catch {
           setSentMessage("Profile found. Profile lookup recovery could not be updated.");
         }
       }
 
-      setVolunteer({ ...profile, id, browserTokenHash: tokenHash, createdAt: existing.createdAt, updatedAt: new Date() });
+      setVolunteer(existing);
       setFindProfile(emptyFindProfile);
       setSentMessage((message) => message || "Profile found. Welcome back.");
     } catch (error) {

@@ -27,7 +27,10 @@ function volunteerName(volunteer: VolunteerProfile) {
 }
 
 function isSupervisor(volunteer?: VolunteerProfile) {
-  return Boolean(volunteer?.skills.some((skill) => supervisorSkillTags.has(skill.trim().toLowerCase())));
+  return Boolean(
+    volunteer &&
+      [...volunteer.skills, ...volunteer.tags].some((tag) => supervisorSkillTags.has(tag.trim().toLowerCase()))
+  );
 }
 
 function checkedInMinutes(session: AttendanceSession) {
