@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Pencil, Trash2, UserMinus, UserPlus } from "lucide-react";
+import { Check, Pause, Pencil, Trash2, UserMinus, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui";
 import type { VolunteerProfile, VolunteerTask, TaskStatus, TaskLocation } from "@/lib/types";
 
@@ -135,6 +135,12 @@ export function KanbanBoard({
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
+                    {column.status === "in-progress" && (
+                      <Button className="min-h-9 bg-white px-3 text-ink" onClick={() => onStatusChange(task, "todo")}>
+                        <Pause size={15} />
+                        Pause
+                      </Button>
+                    )}
                     {column.status !== "in-progress" && (
                       <Button className="min-h-9 bg-moss px-3 text-white" onClick={() => onStatusChange(task, "in-progress")}>
                         Start
