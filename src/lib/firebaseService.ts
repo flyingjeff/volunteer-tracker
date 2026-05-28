@@ -38,7 +38,8 @@ function mapAttendance(id: string, data: Record<string, unknown>): AttendanceSes
     status: data.status === "checked-out" ? "checked-out" : "checked-in",
     checkedInAt: toDate(data.checkedInAt),
     checkedOutAt: data.checkedOutAt ? toDate(data.checkedOutAt) : undefined,
-    totalMinutes: typeof data.totalMinutes === "number" ? data.totalMinutes : undefined
+    totalMinutes: typeof data.totalMinutes === "number" ? data.totalMinutes : undefined,
+    isSupervisor: Boolean(data.isSupervisor)
   };
 }
 
@@ -138,6 +139,11 @@ function mapActivityLog(id: string, data: Record<string, unknown>): ActivityLog 
 
 function volunteerName(volunteer: Pick<VolunteerProfile, "firstName" | "lastName">) {
   return `${volunteer.firstName} ${volunteer.lastName}`.trim();
+}
+
+function volunteerIsSupervisor(volunteer: Pick<VolunteerProfile, "skills" | "tags">) {
+  const supervisorTags = new Set(["supervisor", "lead", "leader"]);
+  return [...volunteer.skills, ...volunteer.tags].some((tag) => supervisorTags.has(tag.trim().toLowerCase()));
 }
 
 function slugify(value: string) {
@@ -302,6 +308,7 @@ export async function checkIn(eventId: string, siteId: string, volunteer: Volunt
     volunteerId: volunteer.id,
     volunteerTokenHash: tokenHash,
     volunteerName: name,
+    isSupervisor: volunteerIsSupervisor(volunteer),
     status: "checked-in",
     checkedInAt: serverTimestamp()
   }, { merge: true });

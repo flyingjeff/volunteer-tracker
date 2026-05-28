@@ -57,7 +57,8 @@ export const demoAttendance: AttendanceSession[] = [
     volunteerId: "v1",
     volunteerName: "Ana Rivera",
     status: "checked-in",
-    checkedInAt: new Date(Date.now() - 55 * 60000)
+    checkedInAt: new Date(Date.now() - 55 * 60000),
+    isSupervisor: true
   },
   {
     id: "a2",

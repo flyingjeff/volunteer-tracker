@@ -40,6 +40,7 @@ export type AttendanceSession = {
   checkedInAt: Date;
   checkedOutAt?: Date;
   totalMinutes?: number;
+  isSupervisor?: boolean;
 };
 
 export type TaskStatus = "todo" | "in-progress" | "complete";

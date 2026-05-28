@@ -48,8 +48,7 @@ service cloud.firestore {
     match /attendanceSessions/{sessionId} {
       allow create: if isTokenHash(request.resource.data.volunteerTokenHash)
         && sessionId.matches('.*_' + request.resource.data.volunteerTokenHash + '$');
-      allow read: if isSupervisorDomain()
-        || sessionId.matches('.*_[0-9a-f]{64}$');
+      allow read: if true;
       allow update: if isSupervisorDomain()
         || (
           isTokenHash(resource.data.volunteerTokenHash)

@@ -2,36 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Activity, CheckCircle2, Clock, LogIn, MonitorUp, ShieldCheck, UsersRound } from "lucide-react";
-import { onAuthStateChanged, signInWithPopup, type User } from "firebase/auth";
-import { Button } from "@/components/ui";
-import { auth, googleProvider, isFirebaseConfigured } from "@/lib/firebase";
-import { demoAttendance, demoTasks, demoVolunteers } from "@/lib/mockData";
-import { watchEvents, watchLiveAttendance, watchTasks, watchVolunteers } from "@/lib/firebaseService";
-import type { AttendanceSession, EventSite, TaskStatus, VolunteerProfile, VolunteerTask } from "@/lib/types";
+import { Activity, CheckCircle2, Clock, MonitorUp, ShieldCheck, UsersRound } from "lucide-react";
+import { isFirebaseConfigured } from "@/lib/firebase";
+import { demoAttendance, demoTasks } from "@/lib/mockData";
+import { watchEvents, watchLiveAttendance, watchTasks } from "@/lib/firebaseService";
+import type { AttendanceSession, EventSite, TaskStatus, VolunteerTask } from "@/lib/types";
 
 const statusLabels: Record<TaskStatus, string> = {
   todo: "Ready",
   "in-progress": "Active",
   complete: "Done"
 };
-const supervisorSkillTags = new Set(["supervisor", "lead", "leader"]);
-
-function getEventIdFromUrl() {
-  if (typeof window === "undefined") return "";
-  return new URLSearchParams(window.location.search).get("eventId") ?? "";
-}
-
-function volunteerName(volunteer: VolunteerProfile) {
-  return `${volunteer.firstName} ${volunteer.lastName}`.trim();
-}
-
-function isSupervisor(volunteer?: VolunteerProfile) {
-  return Boolean(
-    volunteer &&
-      [...volunteer.skills, ...volunteer.tags].some((tag) => supervisorSkillTags.has(tag.trim().toLowerCase()))
-  );
-}
 
 function checkedInMinutes(session: AttendanceSession) {
   return Math.max(0, Math.floor((Date.now() - session.checkedInAt.getTime()) / 60000));
@@ -39,18 +20,11 @@ function checkedInMinutes(session: AttendanceSession) {
 
 export default function StatusBoardPage() {
   const configured = isFirebaseConfigured();
-  const supervisorDomain = process.env.NEXT_PUBLIC_SUPERVISOR_EMAIL_DOMAIN?.trim().toLowerCase() ?? "";
-  const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState(!configured);
   const [events, setEvents] = useState<EventSite[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [attendance, setAttendance] = useState<AttendanceSession[]>(configured ? [] : demoAttendance);
   const [tasks, setTasks] = useState<VolunteerTask[]>(configured ? [] : demoTasks);
-  const [volunteers, setVolunteers] = useState<VolunteerProfile[]>(configured ? [] : demoVolunteers);
   const [now, setNow] = useState(new Date());
-  const setupComplete = configured && Boolean(supervisorDomain);
-  const userEmail = user?.email?.toLowerCase() ?? "";
-  const hasSupervisorAccess = !configured || (setupComplete && Boolean(userEmail.endsWith(`@${supervisorDomain}`)));
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
@@ -58,42 +32,24 @@ export default function StatusBoardPage() {
   }, []);
 
   useEffect(() => {
-    if (!setupComplete) {
-      setAuthReady(true);
-      return;
-    }
-
-    return onAuthStateChanged(auth, (nextUser) => {
-      setUser(nextUser);
-      setAuthReady(true);
-    });
-  }, [setupComplete]);
-
-  useEffect(() => {
-    if (!configured || !hasSupervisorAccess) return;
+    if (!configured) return;
     const unsubEvents = watchEvents(setEvents);
-    const unsubVolunteers = watchVolunteers(setVolunteers);
-    return () => {
-      unsubEvents();
-      unsubVolunteers();
-    };
-  }, [configured, hasSupervisorAccess]);
+    return () => unsubEvents();
+  }, [configured]);
 
   useEffect(() => {
-    if (!configured || !hasSupervisorAccess || events.length === 0) return;
-    const queryEventId = getEventIdFromUrl();
+    if (!configured || events.length === 0) return;
     const savedEventId = window.localStorage.getItem("statusBoardEventId") ?? "";
-    const queryEvent = events.find((event) => event.id === queryEventId);
     const savedEvent = events.find((event) => event.id === savedEventId);
 
     setSelectedEventId((current) => {
       if (current && events.some((event) => event.id === current)) return current;
-      return queryEvent?.id ?? savedEvent?.id ?? events.find((event) => event.active)?.id ?? events[0].id;
+      return savedEvent?.id ?? events.find((event) => event.active)?.id ?? events[0].id;
     });
-  }, [configured, events, hasSupervisorAccess]);
+  }, [configured, events]);
 
   useEffect(() => {
-    if (!configured || !hasSupervisorAccess || !selectedEventId) return;
+    if (!configured || !selectedEventId) return;
     window.localStorage.setItem("statusBoardEventId", selectedEventId);
 
     const unsubAttendance = watchLiveAttendance(selectedEventId, setAttendance);
@@ -103,38 +59,12 @@ export default function StatusBoardPage() {
       unsubAttendance();
       unsubTasks();
     };
-  }, [configured, hasSupervisorAccess, selectedEventId]);
+  }, [configured, selectedEventId]);
 
   const selectedEvent = events.find((event) => event.id === selectedEventId) ?? null;
   const activeTasks = useMemo(() => tasks.filter((task) => task.status !== "complete"), [tasks]);
   const inProgressTasks = activeTasks.filter((task) => task.status === "in-progress");
-  const checkedInIds = new Set(attendance.map((session) => session.volunteerId));
-  const checkedInVolunteers = volunteers.filter((volunteer) => checkedInIds.has(volunteer.id));
-  const supervisorsHere = checkedInVolunteers.filter(isSupervisor);
-  const volunteerById = new Map(volunteers.map((volunteer) => [volunteer.id, volunteer]));
-
-  async function handleSignIn() {
-    if (!setupComplete) return;
-    await signInWithPopup(auth, googleProvider);
-  }
-
-  if (configured && (!authReady || !hasSupervisorAccess)) {
-    return (
-      <main className="grid min-h-screen place-items-center bg-ink px-5 text-white">
-        <section className="w-full max-w-md rounded-lg border border-white/10 bg-white p-5 text-ink shadow-soft">
-          <ShieldCheck className="text-moss" size={36} />
-          <h1 className="mt-3 text-2xl font-black">Status Board</h1>
-          <p className="mt-2 text-sm font-semibold leading-6 text-ink/65">
-            Sign in with a supervisor account to show live attendance and task status on the monitor.
-          </p>
-          <Button className="mt-5 w-full bg-moss text-white" disabled={!setupComplete || !authReady} onClick={handleSignIn}>
-            <LogIn size={18} />
-            Sign In
-          </Button>
-        </section>
-      </main>
-    );
-  }
+  const supervisorsHere = attendance.filter((session) => session.isSupervisor);
 
   return (
     <main className="min-h-screen overflow-hidden bg-ink text-white">
@@ -193,8 +123,7 @@ export default function StatusBoardPage() {
                     <EmptyBoardMessage message="No one is checked in yet." />
                   ) : (
                     attendance.slice(0, 12).map((session) => {
-                      const volunteer = volunteerById.get(session.volunteerId);
-                      const supervisor = isSupervisor(volunteer);
+                      const supervisor = Boolean(session.isSupervisor);
                       return (
                         <article
                           key={session.id}
@@ -231,17 +160,12 @@ export default function StatusBoardPage() {
                   {supervisorsHere.length === 0 ? (
                     <EmptyBoardMessage message="No checked-in supervisors tagged yet." />
                   ) : (
-                    supervisorsHere.map((volunteer) => {
-                      const session = attendance.find((item) => item.volunteerId === volunteer.id);
-                      return (
-                        <article key={volunteer.id} className="rounded-md border border-gold bg-gold/15 p-4">
-                          <h3 className="text-2xl font-black">{volunteerName(volunteer)}</h3>
-                          <p className="mt-1 text-sm font-bold text-ink/60">
-                            {session ? `${checkedInMinutes(session)} min on site` : "Checked in"}
-                          </p>
-                        </article>
-                      );
-                    })
+                    supervisorsHere.map((session) => (
+                      <article key={session.id} className="rounded-md border border-gold bg-gold/15 p-4">
+                        <h3 className="text-2xl font-black">{session.volunteerName}</h3>
+                        <p className="mt-1 text-sm font-bold text-ink/60">{checkedInMinutes(session)} min on site</p>
+                      </article>
+                    ))
                   )}
                 </div>
               </section>
@@ -272,19 +196,9 @@ export default function StatusBoardPage() {
                       {task.assignedVolunteerIds.length === 0 ? (
                         <span className="rounded bg-white px-2 py-1 text-sm font-bold text-ink/50">Unassigned</span>
                       ) : (
-                        task.assignedVolunteerIds.map((id) => {
-                          const volunteer = volunteerById.get(id);
-                          return (
-                            <span
-                              key={id}
-                              className={`rounded px-2 py-1 text-sm font-bold ${
-                                isSupervisor(volunteer) ? "bg-gold text-ink" : "bg-white text-ink/70"
-                              }`}
-                            >
-                              {volunteer ? volunteerName(volunteer) : "Unknown"}
-                            </span>
-                          );
-                        })
+                        <span className="rounded bg-white px-2 py-1 text-sm font-bold text-ink/70">
+                          {task.assignedVolunteerIds.length} assigned
+                        </span>
                       )}
                     </div>
                   </article>

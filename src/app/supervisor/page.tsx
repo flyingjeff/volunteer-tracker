@@ -1470,7 +1470,7 @@ export default function SupervisorPage() {
                       </Button>
                       <a
                         className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-paper px-4 py-2 text-sm font-bold text-ink transition active:scale-[0.99]"
-                        href={`/status?eventId=${encodeURIComponent(selectedEvent.id)}`}
+                        href="/status"
                         target="_blank"
                         rel="noreferrer"
                       >
