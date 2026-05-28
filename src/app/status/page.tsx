@@ -36,9 +36,10 @@ export default function StatusBoardPage() {
   const [attendance, setAttendance] = useState<AttendanceSession[]>(configured ? [] : demoAttendance);
   const [tasks, setTasks] = useState<VolunteerTask[]>(configured ? [] : demoTasks);
   const [locations, setLocations] = useState<TaskLocation[]>([]);
-  const [now, setNow] = useState(new Date());
+  const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
+    setNow(new Date());
     const timer = window.setInterval(() => setNow(new Date()), 30000);
     return () => window.clearInterval(timer);
   }, []);
@@ -78,8 +79,16 @@ export default function StatusBoardPage() {
   const selectedEvent = events.find((event) => event.id === selectedEventId) ?? null;
   const activeTasks = useMemo(() => tasks.filter((task) => task.status !== "complete"), [tasks]);
   const inProgressTasks = activeTasks.filter((task) => task.status === "in-progress");
-  const taskLeaderIds = new Set(activeTasks.map((task) => task.taskLeaderVolunteerId).filter(Boolean));
-  const taskLeadersHere = attendance.filter((session) => taskLeaderIds.has(session.volunteerId));
+  const supervisorsHere = attendance.filter((session) => session.isSupervisor);
+  const sortedAttendance = useMemo(
+    () =>
+      [...attendance].sort((a, b) => {
+        const supervisorSort = Number(Boolean(b.isSupervisor)) - Number(Boolean(a.isSupervisor));
+        if (supervisorSort !== 0) return supervisorSort;
+        return b.checkedInAt.getTime() - a.checkedInAt.getTime();
+      }),
+    [attendance]
+  );
 
   return (
     <main className="h-screen max-h-screen overflow-hidden bg-ink text-white">
@@ -113,7 +122,9 @@ export default function StatusBoardPage() {
             )}
             <div className="rounded-md border border-white/10 bg-white px-4 py-2 text-right text-ink">
               <p className="text-xs font-bold uppercase tracking-[0.12em] text-ink/50">Updated</p>
-              <p className="text-[clamp(1rem,1.5vw,1.35rem)] font-black">{now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
+              <p className="text-[clamp(1rem,1.5vw,1.35rem)] font-black">
+                {now ? now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "--:--"}
+              </p>
             </div>
           </div>
         </header>
@@ -122,10 +133,10 @@ export default function StatusBoardPage() {
           <BoardMetric icon={Activity} label="Active Tasks" value={activeTasks.length.toString()} />
           <BoardMetric icon={CheckCircle2} label="In Progress" value={inProgressTasks.length.toString()} />
           <BoardMetric icon={UsersRound} label="Here Now" value={attendance.length.toString()} />
-          <BoardMetric icon={ShieldCheck} label="Task Leaders" value={taskLeadersHere.length.toString()} highlight />
+          <BoardMetric icon={ShieldCheck} label="Supervisors" value={supervisorsHere.length.toString()} highlight />
         </div>
 
-        <div className="grid min-h-0 gap-[min(1.5vh,1rem)] xl:grid-cols-[1.25fr_0.95fr_0.8fr]">
+        <div className="grid min-h-0 gap-[min(1.5vh,1rem)] xl:grid-cols-[1.25fr_0.95fr]">
           <StatusPanel title="What We Are Working On" count={activeTasks.length} countClassName="bg-ink text-white">
             <AutoScrollArea watchKey={`tasks-${activeTasks.length}-${activeTasks.map((task) => task.id).join("-")}`}>
               {activeTasks.length === 0 ? (
@@ -141,22 +152,7 @@ export default function StatusBoardPage() {
               {attendance.length === 0 ? (
                 <EmptyBoardMessage message="No one is checked in yet." />
               ) : (
-                attendance.map((session) => <AttendanceCard key={session.id} session={session} isTaskLeader={taskLeaderIds.has(session.volunteerId)} />)
-              )}
-            </AutoScrollArea>
-          </StatusPanel>
-
-          <StatusPanel
-            title="Task Leaders Here"
-            count={taskLeadersHere.length}
-            countClassName="bg-gold text-ink"
-            icon={<ShieldCheck className="text-gold" size={30} />}
-          >
-            <AutoScrollArea watchKey={`leaders-${taskLeadersHere.length}-${taskLeadersHere.map((session) => session.id).join("-")}`}>
-              {taskLeadersHere.length === 0 ? (
-                <EmptyBoardMessage message="No checked-in task leaders yet." />
-              ) : (
-                taskLeadersHere.map((session) => <SupervisorCard key={session.id} session={session} />)
+                sortedAttendance.map((session) => <AttendanceCard key={session.id} session={session} />)
               )}
             </AutoScrollArea>
           </StatusPanel>
@@ -196,39 +192,59 @@ function StatusPanel({
 
 function AutoScrollArea({ children, watchKey }: { children: ReactNode; watchKey: string }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [canScroll, setCanScroll] = useState(false);
 
   useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
 
-    element.scrollTop = 0;
-    let frameId = 0;
-    let lastTime = performance.now();
-    let pauseUntil = lastTime + 2500;
-    const pixelsPerSecond = 14;
+    function updateScrollState() {
+      const target = scrollRef.current;
+      setCanScroll(Boolean(target && target.scrollHeight > target.clientHeight + 4));
+    }
 
-    function tick(time: number) {
+    updateScrollState();
+    const observer = new ResizeObserver(updateScrollState);
+    observer.observe(element);
+    if (element.firstElementChild) observer.observe(element.firstElementChild);
+
+    window.addEventListener("resize", updateScrollState);
+    const timeoutId = window.setTimeout(updateScrollState, 250);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateScrollState);
+      window.clearTimeout(timeoutId);
+    };
+  }, [watchKey]);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element || !canScroll) return;
+
+    element.scrollTop = 0;
+    let pauseTicks = 55;
+    const intervalId = window.setInterval(() => {
       const target = scrollRef.current;
       if (!target) return;
 
       const maxScroll = target.scrollHeight - target.clientHeight;
-      if (maxScroll > 4 && time >= pauseUntil) {
-        const elapsed = Math.min(time - lastTime, 80);
-        target.scrollTop += (elapsed / 1000) * pixelsPerSecond;
-
-        if (target.scrollTop >= maxScroll - 1) {
-          target.scrollTop = 0;
-          pauseUntil = time + 2500;
-        }
+      if (maxScroll <= 4) return;
+      if (pauseTicks > 0) {
+        pauseTicks -= 1;
+        return;
       }
 
-      lastTime = time;
-      frameId = requestAnimationFrame(tick);
-    }
+      target.scrollTop += 1;
 
-    frameId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frameId);
-  }, [watchKey]);
+      if (target.scrollTop >= maxScroll - 1) {
+        target.scrollTop = 0;
+        pauseTicks = 55;
+      }
+    }, 45);
+
+    return () => window.clearInterval(intervalId);
+  }, [canScroll, watchKey]);
 
   return (
     <div ref={scrollRef} className="mt-3 min-h-0 overflow-hidden">
@@ -268,21 +284,18 @@ function TaskCard({ task, locationLabel }: { task: VolunteerTask; locationLabel:
   );
 }
 
-function AttendanceCard({ session, isTaskLeader }: { session: AttendanceSession; isTaskLeader: boolean }) {
-  const highlighted = Boolean(session.isSupervisor || isTaskLeader);
-
+function AttendanceCard({ session }: { session: AttendanceSession }) {
   return (
     <article
       className={`rounded-md border p-[min(1.3vh,0.9rem)] ${
-        highlighted ? "border-gold bg-gold/15 ring-2 ring-gold/30" : "border-ink/10 bg-paper"
+        session.isSupervisor ? "border-gold bg-gold/15 ring-2 ring-gold/30" : "border-ink/10 bg-paper"
       }`}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="truncate text-[clamp(1rem,1.45vw,1.35rem)] font-black">{session.volunteerName}</h3>
-            {isTaskLeader && <span className="rounded bg-gold px-2 py-1 text-xs font-black text-ink">Task Leader</span>}
-            {!isTaskLeader && session.isSupervisor && <span className="rounded bg-gold px-2 py-1 text-xs font-black text-ink">Supervisor</span>}
+            {session.isSupervisor && <span className="rounded bg-gold px-2 py-1 text-xs font-black text-ink">Supervisor</span>}
           </div>
           <p className="mt-1 flex items-center gap-2 text-sm font-bold text-ink/55">
             <Clock size={15} />
@@ -291,15 +304,6 @@ function AttendanceCard({ session, isTaskLeader }: { session: AttendanceSession;
         </div>
         <span className="h-3 w-3 shrink-0 rounded-full bg-moss" />
       </div>
-    </article>
-  );
-}
-
-function SupervisorCard({ session }: { session: AttendanceSession }) {
-  return (
-    <article className="rounded-md border border-gold bg-gold/15 p-[min(1.5vh,1rem)]">
-      <h3 className="truncate text-[clamp(1.1rem,1.6vw,1.55rem)] font-black">{session.volunteerName}</h3>
-      <p className="mt-1 text-sm font-bold text-ink/60">{checkedInMinutes(session)} min on site</p>
     </article>
   );
 }
