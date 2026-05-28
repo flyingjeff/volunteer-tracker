@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import QRCode from "qrcode";
 import { Activity, CheckCircle2, Clock, MonitorUp, ShieldCheck, UsersRound } from "lucide-react";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { demoAttendance, demoTasks } from "@/lib/mockData";
@@ -80,6 +81,12 @@ export default function StatusBoardPage() {
   const activeTasks = useMemo(() => tasks.filter((task) => task.status !== "complete"), [tasks]);
   const inProgressTasks = activeTasks.filter((task) => task.status === "in-progress");
   const supervisorsHere = attendance.filter((session) => session.isSupervisor);
+  const boardEventId = selectedEvent?.id ?? selectedEventId;
+  const qrLink = useMemo(() => {
+    if (!boardEventId) return "";
+    if (typeof window === "undefined") return `/e/${boardEventId}`;
+    return `${window.location.origin}/e/${boardEventId}`;
+  }, [boardEventId]);
   const sortedAttendance = useMemo(
     () =>
       [...attendance].sort((a, b) => {
@@ -126,6 +133,16 @@ export default function StatusBoardPage() {
                 {now ? now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "--:--"}
               </p>
             </div>
+            {qrLink && (
+              <div className="rounded-md border border-white/10 bg-white p-2 text-ink">
+                <p className="px-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/50">Event Check-In QR</p>
+                <EventQrImage
+                  value={qrLink}
+                  alt={`${selectedEvent?.name ?? "Event"} check-in QR code`}
+                  className="mt-1 aspect-square w-[clamp(8rem,13vw,11rem)] rounded bg-white object-contain"
+                />
+              </div>
+            )}
           </div>
         </header>
 
@@ -137,12 +154,12 @@ export default function StatusBoardPage() {
         </div>
 
         <div className="grid min-h-0 gap-[min(1.5vh,1rem)] xl:grid-cols-[1.25fr_0.95fr]">
-          <StatusPanel title="What We Are Working On" count={activeTasks.length} countClassName="bg-ink text-white">
-            <AutoScrollArea watchKey={`tasks-${activeTasks.length}-${activeTasks.map((task) => task.id).join("-")}`}>
-              {activeTasks.length === 0 ? (
-                <EmptyBoardMessage message="No active tasks right now." />
+          <StatusPanel title="What We Are Working On" count={inProgressTasks.length} countClassName="bg-ink text-white">
+            <AutoScrollArea watchKey={`tasks-${inProgressTasks.length}-${inProgressTasks.map((task) => task.id).join("-")}`}>
+              {inProgressTasks.length === 0 ? (
+                <EmptyBoardMessage message="No in-progress tasks right now." />
               ) : (
-                activeTasks.map((task) => <TaskCard key={task.id} task={task} locationLabel={taskLocationLabel(task, locations)} />)
+                inProgressTasks.map((task) => <TaskCard key={task.id} task={task} locationLabel={taskLocationLabel(task, locations)} />)
               )}
             </AutoScrollArea>
           </StatusPanel>
@@ -192,21 +209,25 @@ function StatusPanel({
 
 function AutoScrollArea({ children, watchKey }: { children: ReactNode; watchKey: string }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const [canScroll, setCanScroll] = useState(false);
 
   useEffect(() => {
-    const element = scrollRef.current;
-    if (!element) return;
+    const container = scrollRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return;
 
     function updateScrollState() {
       const target = scrollRef.current;
-      setCanScroll(Boolean(target && target.scrollHeight > target.clientHeight + 4));
+      const primaryContent = contentRef.current;
+      if (!target || !primaryContent) return;
+      setCanScroll(primaryContent.scrollHeight > target.clientHeight + 4);
     }
 
     updateScrollState();
     const observer = new ResizeObserver(updateScrollState);
-    observer.observe(element);
-    if (element.firstElementChild) observer.observe(element.firstElementChild);
+    observer.observe(container);
+    observer.observe(content);
 
     window.addEventListener("resize", updateScrollState);
     const timeoutId = window.setTimeout(updateScrollState, 250);
@@ -220,35 +241,54 @@ function AutoScrollArea({ children, watchKey }: { children: ReactNode; watchKey:
 
   useEffect(() => {
     const element = scrollRef.current;
-    if (!element || !canScroll) return;
+    const content = contentRef.current;
+    if (!element || !content || !canScroll) {
+      if (element) element.scrollTop = 0;
+      return;
+    }
 
     element.scrollTop = 0;
-    let pauseTicks = 55;
-    const intervalId = window.setInterval(() => {
-      const target = scrollRef.current;
-      if (!target) return;
+    let frameId = 0;
+    let lastTime = performance.now();
+    const pixelsPerSecond = 22;
 
-      const maxScroll = target.scrollHeight - target.clientHeight;
-      if (maxScroll <= 4) return;
-      if (pauseTicks > 0) {
-        pauseTicks -= 1;
+    function tick(time: number) {
+      const target = scrollRef.current;
+      const primaryContent = contentRef.current;
+      if (!target || !primaryContent) return;
+
+      const elapsed = Math.min(time - lastTime, 50);
+      const contentHeight = primaryContent.scrollHeight;
+      if (contentHeight <= target.clientHeight + 4) {
+        target.scrollTop = 0;
+        lastTime = time;
+        frameId = requestAnimationFrame(tick);
         return;
       }
 
-      target.scrollTop += 1;
-
-      if (target.scrollTop >= maxScroll - 1) {
-        target.scrollTop = 0;
-        pauseTicks = 55;
+      target.scrollTop += (elapsed / 1000) * pixelsPerSecond;
+      if (target.scrollTop >= contentHeight) {
+        target.scrollTop -= contentHeight;
       }
-    }, 45);
 
-    return () => window.clearInterval(intervalId);
+      lastTime = time;
+      frameId = requestAnimationFrame(tick);
+    }
+
+    frameId = requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frameId);
   }, [canScroll, watchKey]);
 
   return (
     <div ref={scrollRef} className="mt-3 min-h-0 overflow-hidden">
-      <div className="grid content-start gap-[min(1.1vh,0.75rem)]">{children}</div>
+      <div ref={contentRef} className="grid content-start gap-[min(1.1vh,0.75rem)]">
+        {children}
+      </div>
+      {canScroll && (
+        <div aria-hidden className="mt-[min(1.1vh,0.75rem)] grid content-start gap-[min(1.1vh,0.75rem)]">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -326,6 +366,40 @@ function BoardMetric({
       <p className="mt-1 text-[clamp(2rem,4vw,3.5rem)] font-black leading-none">{value}</p>
     </div>
   );
+}
+
+function EventQrImage({ value, alt, className }: { value: string; alt: string; className: string }) {
+  const [src, setSrc] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    QRCode.toDataURL(value, {
+      width: 360,
+      margin: 2,
+      errorCorrectionLevel: "M",
+      color: {
+        dark: "#17211c",
+        light: "#ffffff"
+      }
+    })
+      .then((dataUrl) => {
+        if (mounted) setSrc(dataUrl);
+      })
+      .catch(() => {
+        if (mounted) setSrc("");
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [value]);
+
+  if (!src) {
+    return <div className={`${className} grid place-items-center text-xs font-bold text-ink/45`}>QR</div>;
+  }
+
+  return <img className={className} src={src} alt={alt} />;
 }
 
 function EmptyBoardMessage({ message }: { message: string }) {
