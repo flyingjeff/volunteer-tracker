@@ -9,6 +9,7 @@ import { KanbanBoard } from "@/components/KanbanBoard";
 import { auth, googleProvider, isFirebaseConfigured } from "@/lib/firebase";
 import {
   addActivityLog,
+  checkIn,
   checkOut,
   deleteEvent,
   deleteTask,
@@ -97,6 +98,7 @@ type VolunteerForm = {
   waiverSignerName: string;
   waiverSignedBy: "volunteer" | "guardian" | "";
   notes: string;
+  notDuplicate: boolean;
   consentAcknowledged: boolean;
 };
 
@@ -122,6 +124,7 @@ const emptyVolunteer: VolunteerForm = {
   waiverSignerName: "",
   waiverSignedBy: "",
   notes: "",
+  notDuplicate: false,
   consentAcknowledged: true
 };
 
@@ -292,6 +295,7 @@ export default function SupervisorPage() {
   const duplicateCandidates = useMemo(() => {
     const byKey = new Map<string, VolunteerProfile[]>();
     volunteers.forEach((volunteer) => {
+      if (volunteer.notDuplicate) return;
       const keys = [
         volunteer.email.trim().toLowerCase() ? `email:${volunteer.email.trim().toLowerCase()}` : "",
         volunteer.phone.replace(/\D/g, "") ? `phone:${volunteer.phone.replace(/\D/g, "")}` : "",
@@ -306,6 +310,7 @@ export default function SupervisorPage() {
       .map(([key, matches]) => ({ key, matches }));
   }, [volunteers]);
 
+  const checkedInVolunteerIds = new Set(attendance.map((session) => session.volunteerId));
   const totalMinutes = history.reduce((sum, item) => sum + (item.totalMinutes ?? 0), 0);
 
   function pushSupervisorNotification(title: string, body: string) {
@@ -470,6 +475,7 @@ export default function SupervisorPage() {
       waiverSignerName: volunteer.waiverSignerName,
       waiverSignedBy: volunteer.waiverSignedBy,
       notes: volunteer.notes,
+      notDuplicate: volunteer.notDuplicate,
       consentAcknowledged: volunteer.consentAcknowledged
     });
   }
@@ -524,6 +530,7 @@ export default function SupervisorPage() {
       waiverSignedBy: volunteerForm.waiverSignedBy,
       waiverTextVersion: volunteerForm.consentAcknowledged ? "renovation-safety-2026-05" : "",
       notes: volunteerForm.notes.trim(),
+      notDuplicate: volunteerForm.notDuplicate,
       consentAcknowledged: volunteerForm.consentAcknowledged
     };
 
@@ -547,6 +554,41 @@ export default function SupervisorPage() {
       setSelectedVolunteerId("");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to save volunteer.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateVolunteerDuplicateFlag(volunteer: VolunteerProfile, notDuplicate: boolean) {
+    setErrorMessage("");
+    setSaving(true);
+
+    try {
+      if (hasSupervisorAccess) {
+        await saveManagedVolunteer(volunteer.id, {
+          firstName: volunteer.firstName,
+          lastName: volunteer.lastName,
+          phone: volunteer.phone,
+          email: volunteer.email,
+          dateOfBirth: volunteer.dateOfBirth,
+          skills: volunteer.skills,
+          tags: volunteer.tags,
+          emergencyContact: volunteer.emergencyContact,
+          guardianName: volunteer.guardianName,
+          guardianPhone: volunteer.guardianPhone,
+          guardianEmail: volunteer.guardianEmail,
+          waiverSignerName: volunteer.waiverSignerName,
+          waiverSignedBy: volunteer.waiverSignedBy,
+          waiverAcknowledgedAt: volunteer.waiverAcknowledgedAt,
+          waiverTextVersion: volunteer.waiverTextVersion,
+          notes: volunteer.notes,
+          notDuplicate,
+          consentAcknowledged: volunteer.consentAcknowledged
+        });
+      }
+      setVolunteers((items) => items.map((item) => (item.id === volunteer.id ? { ...item, notDuplicate } : item)));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to update duplicate status.");
     } finally {
       setSaving(false);
     }
@@ -599,6 +641,7 @@ export default function SupervisorPage() {
       waiverAcknowledgedAt: target.waiverAcknowledgedAt ?? source.waiverAcknowledgedAt,
       waiverTextVersion: target.waiverTextVersion || source.waiverTextVersion,
       notes: [target.notes, source.notes].filter(Boolean).join("\n\nMerged duplicate note:\n"),
+      notDuplicate: target.notDuplicate || source.notDuplicate,
       consentAcknowledged: target.consentAcknowledged || source.consentAcknowledged
     };
 
@@ -637,6 +680,20 @@ export default function SupervisorPage() {
       if (hasSupervisorAccess) await checkOut(session);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to check out volunteer.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSupervisorCheckIn(volunteer: VolunteerProfile) {
+    if (!selectedEventId) return;
+    setErrorMessage("");
+    setSaving(true);
+
+    try {
+      if (hasSupervisorAccess) await checkIn(selectedEventId, siteId, volunteer, volunteer.browserTokenHash || volunteer.id);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to check in volunteer.");
     } finally {
       setSaving(false);
     }
@@ -790,6 +847,7 @@ export default function SupervisorPage() {
         "Waiver signed by",
         "Waiver acknowledged at",
         "Notes",
+        "Not duplicate",
         "Consent acknowledged"
       ],
       ...volunteers.map((volunteer) => [
@@ -808,6 +866,7 @@ export default function SupervisorPage() {
         volunteer.waiverSignedBy,
         volunteer.waiverAcknowledgedAt?.toISOString() ?? "",
         volunteer.notes,
+        volunteer.notDuplicate ? "Yes" : "No",
         volunteer.consentAcknowledged ? "Yes" : "No"
       ])
     ]);
@@ -932,6 +991,9 @@ export default function SupervisorPage() {
                         <Button className="min-h-9 bg-ink px-2 text-white" title="Keep this profile" onClick={() => setMergeTargetId(volunteer.id)}>
                           Keep
                         </Button>
+                        <Button className="min-h-9 bg-moss px-2 text-white" title="Not a duplicate" disabled={saving} onClick={() => updateVolunteerDuplicateFlag(volunteer, true)}>
+                          Not Duplicate
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -1041,6 +1103,15 @@ export default function SupervisorPage() {
             <input
               className="h-5 w-5 accent-moss"
               type="checkbox"
+              checked={volunteerForm.notDuplicate}
+              onChange={(event) => setVolunteerForm({ ...volunteerForm, notDuplicate: event.target.checked })}
+            />
+            Not a duplicate
+          </label>
+          <label className="flex items-center gap-3 rounded-md border border-ink/10 bg-white p-3 text-sm font-semibold text-ink">
+            <input
+              className="h-5 w-5 accent-moss"
+              type="checkbox"
               checked={volunteerForm.consentAcknowledged}
               onChange={(event) => setVolunteerForm({ ...volunteerForm, consentAcknowledged: event.target.checked })}
             />
@@ -1087,6 +1158,9 @@ export default function SupervisorPage() {
                     <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/45">
                       {volunteer.consentAcknowledged ? "Consent on file" : "Consent missing"}
                     </p>
+                    {volunteer.notDuplicate && (
+                      <p className="mt-1 inline-flex rounded bg-moss px-2 py-1 text-xs font-black text-white">Not a duplicate</p>
+                    )}
                   </td>
                   <td className="p-3 font-semibold text-ink/70">
                     <p>{volunteer.email || "No email"}</p>
@@ -1129,7 +1203,23 @@ export default function SupervisorPage() {
                   </td>
                   <td className="max-w-xs p-3 text-sm font-semibold leading-6 text-ink/65">{volunteer.notes || "No notes"}</td>
                   <td className="rounded-r-md p-3">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button
+                        className="min-h-9 bg-white px-2 text-moss"
+                        title="Check in volunteer"
+                        disabled={saving || !selectedEventId || checkedInVolunteerIds.has(volunteer.id)}
+                        onClick={() => handleSupervisorCheckIn(volunteer)}
+                      >
+                        <LogIn size={16} />
+                      </Button>
+                      <Button
+                        className={volunteer.notDuplicate ? "min-h-9 bg-moss px-2 text-white" : "min-h-9 bg-white px-2 text-ink"}
+                        title={volunteer.notDuplicate ? "Clear not duplicate flag" : "Mark not a duplicate"}
+                        disabled={saving}
+                        onClick={() => updateVolunteerDuplicateFlag(volunteer, !volunteer.notDuplicate)}
+                      >
+                        Not Dup
+                      </Button>
                       <Button className="min-h-9 bg-white px-2 text-ink" title="Edit volunteer" onClick={() => editVolunteer(volunteer)}>
                         <Pencil size={16} />
                       </Button>

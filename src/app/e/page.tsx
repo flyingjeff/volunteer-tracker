@@ -8,7 +8,7 @@ import {
   addActivityLog,
   checkIn,
   checkOut,
-  findVolunteerByLookup,
+  findVolunteersByLookup,
   findVolunteerByTokenHash,
   joinTask,
   saveVolunteerLookup,
@@ -123,6 +123,7 @@ export default function VolunteerEventPage() {
   const [tokenHash, setTokenHash] = useState("");
   const [eventDetails, setEventDetails] = useState<EventSite | null>(null);
   const [volunteer, setVolunteer] = useState<VolunteerProfile | null>(null);
+  const [profileMatches, setProfileMatches] = useState<VolunteerProfile[]>([]);
   const [session, setSession] = useState<AttendanceSession | null>(null);
   const [tasks, setTasks] = useState<VolunteerTask[]>(configured ? [] : demoTasks);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -228,6 +229,7 @@ export default function VolunteerEventPage() {
       waiverAcknowledgedAt: new Date(),
       waiverTextVersion,
       notes: form.notes.trim(),
+      notDuplicate: false,
       consentAcknowledged: form.consentAcknowledged
     };
 
@@ -301,16 +303,36 @@ export default function VolunteerEventPage() {
       }
 
       const lookupIds = await getVolunteerLookupIds(findProfile.email, findProfile.phone);
-      let existing: VolunteerProfile | null = null;
+      const matchesById = new Map<string, VolunteerProfile>();
       for (const lookupId of lookupIds) {
-        existing = await findVolunteerByLookup(lookupId);
-        if (existing) break;
+        const matches = await findVolunteersByLookup(lookupId);
+        matches.forEach((match) => matchesById.set(match.id, match));
       }
-      if (!existing) {
+      const matches = Array.from(matchesById.values());
+      if (matches.length === 0) {
         setErrorMessage("No profile found for that email or phone.");
         return;
       }
 
+      if (matches.length > 1) {
+        setProfileMatches(matches);
+        setSentMessage("Choose the profile that matches you.");
+        return;
+      }
+
+      await selectExistingProfile(matches[0]);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to find profile.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function selectExistingProfile(existing: VolunteerProfile) {
+    setErrorMessage("");
+    setSaving(true);
+
+    try {
       if (existing.email || existing.phone) {
         try {
           await saveProfileLookups(existing.email, existing.phone, existing.id);
@@ -321,9 +343,10 @@ export default function VolunteerEventPage() {
 
       setVolunteer(existing);
       setFindProfile(emptyFindProfile);
+      setProfileMatches([]);
       setSentMessage((message) => message || "Profile found. Welcome back.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to find profile.");
+      setErrorMessage(error instanceof Error ? error.message : "Unable to select profile.");
     } finally {
       setSaving(false);
     }
@@ -559,17 +582,43 @@ export default function VolunteerEventPage() {
                   label="Email"
                   type="email"
                   value={findProfile.email}
-                  onChange={(event) => setFindProfile({ ...findProfile, email: event.target.value })}
+                  onChange={(event) => {
+                    setFindProfile({ ...findProfile, email: event.target.value });
+                    setProfileMatches([]);
+                  }}
                 />
                 <Field
                   label="Phone"
                   type="tel"
                   value={findProfile.phone}
-                  onChange={(event) => setFindProfile({ ...findProfile, phone: event.target.value })}
+                  onChange={(event) => {
+                    setFindProfile({ ...findProfile, phone: event.target.value });
+                    setProfileMatches([]);
+                  }}
                 />
                 <Button className="bg-gold text-ink" disabled={saving || (!findProfile.email && !findProfile.phone)} onClick={findExistingProfile}>
                   Find Profile
                 </Button>
+                {profileMatches.length > 0 && (
+                  <div className="grid gap-2 rounded-md border border-gold/40 bg-gold/10 p-3">
+                    <p className="text-sm font-black text-ink">Select your profile</p>
+                    {profileMatches.map((match) => (
+                      <button
+                        key={match.id}
+                        className="focus-ring rounded-md border border-ink/10 bg-white p-3 text-left"
+                        disabled={saving}
+                        onClick={() => selectExistingProfile(match)}
+                      >
+                        <p className="font-black text-ink">
+                          {match.firstName} {match.lastName}
+                        </p>
+                        <p className="mt-1 text-xs font-bold text-ink/55">
+                          {[match.email, match.phone, match.dateOfBirth].filter(Boolean).join(" | ")}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </section>
 

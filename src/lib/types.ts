@@ -16,6 +16,7 @@ export type VolunteerProfile = {
   waiverAcknowledgedAt?: Date;
   waiverTextVersion: string;
   notes: string;
+  notDuplicate: boolean;
   consentAcknowledged: boolean;
   browserTokenHash: string;
   createdAt: Date;
@@ -25,6 +26,7 @@ export type VolunteerProfile = {
 export type VolunteerLookup = {
   id: string;
   volunteerId: string;
+  volunteerIds?: string[];
   updatedAt?: Date;
 };
 

@@ -1,5 +1,6 @@
 import {
   addDoc,
+  arrayRemove,
   arrayUnion,
   collection,
   doc,
@@ -83,6 +84,7 @@ function mapVolunteer(id: string, data: Record<string, unknown>): VolunteerProfi
     waiverAcknowledgedAt: data.waiverAcknowledgedAt ? toDate(data.waiverAcknowledgedAt) : undefined,
     waiverTextVersion: String(data.waiverTextVersion ?? ""),
     notes: String(data.notes ?? ""),
+    notDuplicate: Boolean(data.notDuplicate),
     consentAcknowledged: Boolean(data.consentAcknowledged),
     browserTokenHash: String(data.browserTokenHash ?? ""),
     createdAt: toDate(data.createdAt),
@@ -238,8 +240,9 @@ export async function saveManagedVolunteer(
 export async function saveVolunteerLookup(lookupId: string, volunteerId: string) {
   await setDoc(doc(db, "volunteerLookups", lookupId), {
     volunteerId,
+    volunteerIds: arrayUnion(volunteerId),
     updatedAt: serverTimestamp()
-  });
+  }, { merge: true });
 }
 
 export async function deleteVolunteer(volunteerId: string) {
@@ -257,6 +260,14 @@ export async function deleteVolunteer(volunteerId: string) {
 
   const lookupSnapshots = await getDocs(query(collection(db, "volunteerLookups"), where("volunteerId", "==", volunteerId)));
   lookupSnapshots.docs.forEach((item) => batch.delete(item.ref));
+
+  const lookupArraySnapshots = await getDocs(query(collection(db, "volunteerLookups"), where("volunteerIds", "array-contains", volunteerId)));
+  lookupArraySnapshots.docs.forEach((item) => {
+    batch.update(item.ref, {
+      volunteerIds: arrayRemove(volunteerId),
+      updatedAt: serverTimestamp()
+    });
+  });
 
   const attendanceSnapshots = await getDocs(query(collection(db, "attendanceSessions"), where("volunteerId", "==", volunteerId)));
   const checkedOutAt = new Date();
@@ -306,14 +317,30 @@ export async function mergeVolunteerProfileRecords(sourceVolunteerId: string, ta
 }
 
 export async function findVolunteerByLookup(lookupId: string) {
+  const matches = await findVolunteersByLookup(lookupId);
+  return matches[0] ?? null;
+}
+
+export async function findVolunteersByLookup(lookupId: string) {
   const lookup = await getDoc(doc(db, "volunteerLookups", lookupId));
-  if (!lookup.exists()) return null;
+  if (!lookup.exists()) return [];
 
-  const volunteerId = String(lookup.data().volunteerId ?? "");
-  if (!volunteerId) return null;
+  const data = lookup.data();
+  const volunteerIds = Array.from(
+    new Set([
+      ...(Array.isArray(data.volunteerIds) ? data.volunteerIds.map(String) : []),
+      String(data.volunteerId ?? "")
+    ].filter(Boolean))
+  );
 
-  const volunteer = await getDoc(doc(db, "volunteers", volunteerId));
-  return volunteer.exists() ? mapVolunteer(volunteer.id, volunteer.data()) : null;
+  const volunteers = await Promise.all(
+    volunteerIds.map(async (volunteerId) => {
+      const volunteer = await getDoc(doc(db, "volunteers", volunteerId));
+      return volunteer.exists() ? mapVolunteer(volunteer.id, volunteer.data()) : null;
+    })
+  );
+
+  return volunteers.filter((volunteer): volunteer is VolunteerProfile => Boolean(volunteer));
 }
 
 function activeSessionId(eventId: string, siteId: string, tokenHash: string) {

@@ -41,13 +41,20 @@ service cloud.firestore {
     match /volunteerLookups/{lookupId} {
       allow read: if isTokenHash(lookupId);
       allow create, update: if isTokenHash(lookupId)
-        && isTokenHash(request.resource.data.volunteerId);
+        && isTokenHash(request.resource.data.volunteerId)
+        && (
+          !('volunteerIds' in request.resource.data)
+          || request.resource.data.volunteerIds is list
+        );
       allow delete: if isSupervisorDomain();
     }
 
     match /attendanceSessions/{sessionId} {
-      allow create: if isTokenHash(request.resource.data.volunteerTokenHash)
-        && sessionId.matches('.*_' + request.resource.data.volunteerTokenHash + '$');
+      allow create: if isSupervisorDomain()
+        || (
+          isTokenHash(request.resource.data.volunteerTokenHash)
+          && sessionId.matches('.*_' + request.resource.data.volunteerTokenHash + '$')
+        );
       allow read: if true;
       allow update: if isSupervisorDomain()
         || (
