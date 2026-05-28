@@ -5,8 +5,8 @@ import Link from "next/link";
 import { Activity, CheckCircle2, Clock, MonitorUp, ShieldCheck, UsersRound } from "lucide-react";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { demoAttendance, demoTasks } from "@/lib/mockData";
-import { watchEvents, watchLiveAttendance, watchTasks } from "@/lib/firebaseService";
-import type { AttendanceSession, EventSite, TaskStatus, VolunteerTask } from "@/lib/types";
+import { watchEvents, watchLiveAttendance, watchTaskLocations, watchTasks } from "@/lib/firebaseService";
+import type { AttendanceSession, EventSite, TaskLocation, TaskStatus, VolunteerTask } from "@/lib/types";
 
 const statusLabels: Record<TaskStatus, string> = {
   todo: "Ready",
@@ -18,12 +18,24 @@ function checkedInMinutes(session: AttendanceSession) {
   return Math.max(0, Math.floor((Date.now() - session.checkedInAt.getTime()) / 60000));
 }
 
+function taskLocationLabel(task: VolunteerTask, locations: TaskLocation[]) {
+  const hasMultipleFloors = new Set(locations.map((location) => location.floor).filter(Boolean)).size > 1;
+  const parts = [
+    hasMultipleFloors ? task.locationFloor : "",
+    task.locationZone,
+    task.locationName
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(" - ") : "";
+}
+
 export default function StatusBoardPage() {
   const configured = isFirebaseConfigured();
   const [events, setEvents] = useState<EventSite[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [attendance, setAttendance] = useState<AttendanceSession[]>(configured ? [] : demoAttendance);
   const [tasks, setTasks] = useState<VolunteerTask[]>(configured ? [] : demoTasks);
+  const [locations, setLocations] = useState<TaskLocation[]>([]);
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -54,17 +66,20 @@ export default function StatusBoardPage() {
 
     const unsubAttendance = watchLiveAttendance(selectedEventId, setAttendance);
     const unsubTasks = watchTasks(selectedEventId, setTasks);
+    const unsubLocations = watchTaskLocations(selectedEventId, setLocations);
 
     return () => {
       unsubAttendance();
       unsubTasks();
+      unsubLocations();
     };
   }, [configured, selectedEventId]);
 
   const selectedEvent = events.find((event) => event.id === selectedEventId) ?? null;
   const activeTasks = useMemo(() => tasks.filter((task) => task.status !== "complete"), [tasks]);
   const inProgressTasks = activeTasks.filter((task) => task.status === "in-progress");
-  const supervisorsHere = attendance.filter((session) => session.isSupervisor);
+  const taskLeaderIds = new Set(activeTasks.map((task) => task.taskLeaderVolunteerId).filter(Boolean));
+  const taskLeadersHere = attendance.filter((session) => taskLeaderIds.has(session.volunteerId));
 
   return (
     <main className="h-screen max-h-screen overflow-hidden bg-ink text-white">
@@ -107,7 +122,7 @@ export default function StatusBoardPage() {
           <BoardMetric icon={Activity} label="Active Tasks" value={activeTasks.length.toString()} />
           <BoardMetric icon={CheckCircle2} label="In Progress" value={inProgressTasks.length.toString()} />
           <BoardMetric icon={UsersRound} label="Here Now" value={attendance.length.toString()} />
-          <BoardMetric icon={ShieldCheck} label="Supervisors" value={supervisorsHere.length.toString()} highlight />
+          <BoardMetric icon={ShieldCheck} label="Task Leaders" value={taskLeadersHere.length.toString()} highlight />
         </div>
 
         <div className="grid min-h-0 gap-[min(1.5vh,1rem)] xl:grid-cols-[1.25fr_0.95fr_0.8fr]">
@@ -116,7 +131,7 @@ export default function StatusBoardPage() {
               {activeTasks.length === 0 ? (
                 <EmptyBoardMessage message="No active tasks right now." />
               ) : (
-                activeTasks.map((task) => <TaskCard key={task.id} task={task} />)
+                activeTasks.map((task) => <TaskCard key={task.id} task={task} locationLabel={taskLocationLabel(task, locations)} />)
               )}
             </AutoScrollArea>
           </StatusPanel>
@@ -126,22 +141,22 @@ export default function StatusBoardPage() {
               {attendance.length === 0 ? (
                 <EmptyBoardMessage message="No one is checked in yet." />
               ) : (
-                attendance.map((session) => <AttendanceCard key={session.id} session={session} />)
+                attendance.map((session) => <AttendanceCard key={session.id} session={session} isTaskLeader={taskLeaderIds.has(session.volunteerId)} />)
               )}
             </AutoScrollArea>
           </StatusPanel>
 
           <StatusPanel
-            title="Supervisors In"
-            count={supervisorsHere.length}
+            title="Task Leaders Here"
+            count={taskLeadersHere.length}
             countClassName="bg-gold text-ink"
             icon={<ShieldCheck className="text-gold" size={30} />}
           >
-            <AutoScrollArea watchKey={`supervisors-${supervisorsHere.length}-${supervisorsHere.map((session) => session.id).join("-")}`}>
-              {supervisorsHere.length === 0 ? (
-                <EmptyBoardMessage message="No checked-in supervisors tagged yet." />
+            <AutoScrollArea watchKey={`leaders-${taskLeadersHere.length}-${taskLeadersHere.map((session) => session.id).join("-")}`}>
+              {taskLeadersHere.length === 0 ? (
+                <EmptyBoardMessage message="No checked-in task leaders yet." />
               ) : (
-                supervisorsHere.map((session) => <SupervisorCard key={session.id} session={session} />)
+                taskLeadersHere.map((session) => <SupervisorCard key={session.id} session={session} />)
               )}
             </AutoScrollArea>
           </StatusPanel>
@@ -222,7 +237,7 @@ function AutoScrollArea({ children, watchKey }: { children: ReactNode; watchKey:
   );
 }
 
-function TaskCard({ task }: { task: VolunteerTask }) {
+function TaskCard({ task, locationLabel }: { task: VolunteerTask; locationLabel: string }) {
   return (
     <article className="rounded-md border border-ink/10 bg-paper p-[min(1.4vh,1rem)]">
       <div className="flex items-start justify-between gap-3">
@@ -235,6 +250,12 @@ function TaskCard({ task }: { task: VolunteerTask }) {
         </span>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
+        {task.taskLeaderName && (
+          <span className="rounded bg-gold px-2 py-1 text-sm font-black text-ink">
+            Lead: {task.taskLeaderName}
+          </span>
+        )}
+        {locationLabel && <span className="rounded bg-white px-2 py-1 text-sm font-bold text-ink/70">{locationLabel}</span>}
         {task.assignedVolunteerIds.length === 0 ? (
           <span className="rounded bg-white px-2 py-1 text-sm font-bold text-ink/50">Unassigned</span>
         ) : (
@@ -247,20 +268,21 @@ function TaskCard({ task }: { task: VolunteerTask }) {
   );
 }
 
-function AttendanceCard({ session }: { session: AttendanceSession }) {
-  const supervisor = Boolean(session.isSupervisor);
+function AttendanceCard({ session, isTaskLeader }: { session: AttendanceSession; isTaskLeader: boolean }) {
+  const highlighted = Boolean(session.isSupervisor || isTaskLeader);
 
   return (
     <article
       className={`rounded-md border p-[min(1.3vh,0.9rem)] ${
-        supervisor ? "border-gold bg-gold/15 ring-2 ring-gold/30" : "border-ink/10 bg-paper"
+        highlighted ? "border-gold bg-gold/15 ring-2 ring-gold/30" : "border-ink/10 bg-paper"
       }`}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="truncate text-[clamp(1rem,1.45vw,1.35rem)] font-black">{session.volunteerName}</h3>
-            {supervisor && <span className="rounded bg-gold px-2 py-1 text-xs font-black text-ink">Supervisor</span>}
+            {isTaskLeader && <span className="rounded bg-gold px-2 py-1 text-xs font-black text-ink">Task Leader</span>}
+            {!isTaskLeader && session.isSupervisor && <span className="rounded bg-gold px-2 py-1 text-xs font-black text-ink">Supervisor</span>}
           </div>
           <p className="mt-1 flex items-center gap-2 text-sm font-bold text-ink/55">
             <Clock size={15} />

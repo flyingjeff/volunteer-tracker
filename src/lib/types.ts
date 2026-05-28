@@ -53,9 +53,27 @@ export type VolunteerTask = {
   description: string;
   status: TaskStatus;
   assignedVolunteerIds: string[];
+  taskLeaderVolunteerId: string;
+  taskLeaderName: string;
+  locationId: string;
+  locationName: string;
+  locationFloor: string;
+  locationZone: string;
   skillTags: string[];
   createdAt: Date;
   updatedAt: Date;
+};
+
+export type TaskLocation = {
+  id: string;
+  eventId: string;
+  siteId: string;
+  name: string;
+  floor: string;
+  zone: string;
+  active: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
 };
 
 export type EventSite = {

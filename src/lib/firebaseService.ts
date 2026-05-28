@@ -18,7 +18,7 @@ import {
   writeBatch
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { ActivityLog, AttendanceSession, EventSite, TaskFeedback, VolunteerProfile, VolunteerTask } from "@/lib/types";
+import type { ActivityLog, AttendanceSession, EventSite, TaskFeedback, TaskLocation, VolunteerProfile, VolunteerTask } from "@/lib/types";
 
 function toDate(value: unknown) {
   return value instanceof Timestamp ? value.toDate() : value instanceof Date ? value : new Date();
@@ -52,6 +52,12 @@ function mapTask(id: string, data: Record<string, unknown>): VolunteerTask {
     description: String(data.description ?? ""),
     status: data.status === "complete" ? "complete" : data.status === "in-progress" ? "in-progress" : "todo",
     assignedVolunteerIds: Array.isArray(data.assignedVolunteerIds) ? data.assignedVolunteerIds.map(String) : [],
+    taskLeaderVolunteerId: String(data.taskLeaderVolunteerId ?? ""),
+    taskLeaderName: String(data.taskLeaderName ?? ""),
+    locationId: String(data.locationId ?? ""),
+    locationName: String(data.locationName ?? ""),
+    locationFloor: String(data.locationFloor ?? ""),
+    locationZone: String(data.locationZone ?? ""),
     skillTags: Array.isArray(data.skillTags) ? data.skillTags.map(String) : [],
     createdAt: toDate(data.createdAt),
     updatedAt: toDate(data.updatedAt)
@@ -91,6 +97,20 @@ function mapEvent(id: string, data: Record<string, unknown>): EventSite {
     location: String(data.location ?? ""),
     startsAt: toDate(data.startsAt),
     endsAt: data.endsAt ? toDate(data.endsAt) : undefined,
+    active: data.active !== false,
+    createdAt: data.createdAt ? toDate(data.createdAt) : undefined,
+    updatedAt: data.updatedAt ? toDate(data.updatedAt) : undefined
+  };
+}
+
+function mapTaskLocation(id: string, data: Record<string, unknown>): TaskLocation {
+  return {
+    id,
+    eventId: String(data.eventId ?? ""),
+    siteId: String(data.siteId ?? ""),
+    name: String(data.name ?? ""),
+    floor: String(data.floor ?? ""),
+    zone: String(data.zone ?? ""),
     active: data.active !== false,
     createdAt: data.createdAt ? toDate(data.createdAt) : undefined,
     updatedAt: data.updatedAt ? toDate(data.updatedAt) : undefined
@@ -230,6 +250,7 @@ export async function deleteVolunteer(volunteerId: string) {
     const task = mapTask(item.id, item.data());
     batch.update(item.ref, {
       assignedVolunteerIds: task.assignedVolunteerIds.filter((id) => id !== volunteerId),
+      ...(task.taskLeaderVolunteerId === volunteerId ? { taskLeaderVolunteerId: "", taskLeaderName: "" } : {}),
       updatedAt: serverTimestamp()
     });
   });
@@ -264,6 +285,7 @@ export async function mergeVolunteerProfileRecords(sourceVolunteerId: string, ta
       assignedVolunteerIds: Array.from(
         new Set(task.assignedVolunteerIds.map((volunteerId) => (volunteerId === sourceVolunteerId ? targetVolunteer.id : volunteerId)))
       ),
+      ...(task.taskLeaderVolunteerId === sourceVolunteerId ? { taskLeaderVolunteerId: targetVolunteer.id, taskLeaderName: targetName } : {}),
       updatedAt: serverTimestamp()
     });
   });
@@ -399,6 +421,20 @@ export function watchTasks(eventId: string, callback: (tasks: VolunteerTask[]) =
   );
 }
 
+export function watchTaskLocations(eventId: string, callback: (locations: TaskLocation[]) => void) {
+  return onSnapshot(
+    query(collection(db, "taskLocations"), where("eventId", "==", eventId)),
+    (snapshot) =>
+      callback(
+        snapshot.docs
+          .map((item) => mapTaskLocation(item.id, item.data()))
+          .sort((a, b) =>
+            [a.floor, a.zone, a.name].join(" ").localeCompare([b.floor, b.zone, b.name].join(" "))
+          )
+      )
+  );
+}
+
 export function watchVolunteers(callback: (volunteers: VolunteerProfile[]) => void) {
   return onSnapshot(query(collection(db, "volunteers"), orderBy("lastName", "asc")), (snapshot) =>
     callback(snapshot.docs.map((item) => mapVolunteer(item.id, item.data())))
@@ -413,6 +449,12 @@ export async function saveTask(task: Partial<VolunteerTask> & Pick<VolunteerTask
     description: task.description ?? "",
     status: task.status ?? "todo",
     assignedVolunteerIds: task.assignedVolunteerIds ?? [],
+    taskLeaderVolunteerId: task.taskLeaderVolunteerId ?? "",
+    taskLeaderName: task.taskLeaderName ?? "",
+    locationId: task.locationId ?? "",
+    locationName: task.locationName ?? "",
+    locationFloor: task.locationFloor ?? "",
+    locationZone: task.locationZone ?? "",
     skillTags: task.skillTags ?? [],
     updatedAt: serverTimestamp()
   };
@@ -427,6 +469,33 @@ export async function saveTask(task: Partial<VolunteerTask> & Pick<VolunteerTask
     createdAt: serverTimestamp()
   });
   return ref.id;
+}
+
+export async function saveTaskLocation(location: Partial<TaskLocation> & Pick<TaskLocation, "eventId" | "siteId" | "name">) {
+  const payload = {
+    eventId: location.eventId,
+    siteId: location.siteId,
+    name: location.name,
+    floor: location.floor ?? "",
+    zone: location.zone ?? "",
+    active: location.active !== false,
+    updatedAt: serverTimestamp()
+  };
+
+  if (location.id) {
+    await setDoc(doc(db, "taskLocations", location.id), payload, { merge: true });
+    return location.id;
+  }
+
+  const ref = await addDoc(collection(db, "taskLocations"), {
+    ...payload,
+    createdAt: serverTimestamp()
+  });
+  return ref.id;
+}
+
+export async function deleteTaskLocation(locationId: string) {
+  await deleteDoc(doc(db, "taskLocations", locationId));
 }
 
 export async function deleteTask(taskId: string) {

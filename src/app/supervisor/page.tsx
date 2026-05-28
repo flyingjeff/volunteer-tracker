@@ -12,22 +12,25 @@ import {
   checkOut,
   deleteEvent,
   deleteTask,
+  deleteTaskLocation,
   deleteVolunteer,
   mergeVolunteerProfileRecords,
   saveEvent,
   saveManagedVolunteer,
   saveTask,
+  saveTaskLocation,
   saveVolunteerLookup,
   watchActivityLogs,
   watchAttendanceHistory,
   watchEvents,
   watchLiveAttendance,
   watchTaskFeedback,
+  watchTaskLocations,
   watchTasks,
   watchVolunteers
 } from "@/lib/firebaseService";
 import { getVolunteerLookupIds } from "@/lib/volunteerLookup";
-import type { ActivityLog, AttendanceSession, EventSite, TaskFeedback, TaskStatus, VolunteerProfile, VolunteerTask } from "@/lib/types";
+import type { ActivityLog, AttendanceSession, EventSite, TaskFeedback, TaskLocation, TaskStatus, VolunteerProfile, VolunteerTask } from "@/lib/types";
 
 const siteId = "main";
 
@@ -35,13 +38,30 @@ type TaskForm = {
   id?: string;
   title: string;
   description: string;
+  taskLeaderVolunteerId: string;
+  locationId: string;
   skillTags: string;
 };
 
 const emptyTask: TaskForm = {
   title: "",
   description: "",
+  taskLeaderVolunteerId: "",
+  locationId: "",
   skillTags: ""
+};
+
+type LocationForm = {
+  id?: string;
+  name: string;
+  floor: string;
+  zone: string;
+};
+
+const emptyLocation: LocationForm = {
+  name: "",
+  floor: "",
+  zone: ""
 };
 
 type EventForm = {
@@ -127,11 +147,13 @@ export default function SupervisorPage() {
   const [feedback, setFeedback] = useState<TaskFeedback[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [volunteers, setVolunteers] = useState<VolunteerProfile[]>([]);
+  const [locations, setLocations] = useState<TaskLocation[]>([]);
   const [events, setEvents] = useState<EventSite[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [pendingEventId, setPendingEventId] = useState("");
   const [eventForm, setEventForm] = useState<EventForm>(emptyEvent);
   const [taskForm, setTaskForm] = useState<TaskForm>(emptyTask);
+  const [locationForm, setLocationForm] = useState<LocationForm>(emptyLocation);
   const [volunteerForm, setVolunteerForm] = useState<VolunteerForm>(emptyVolunteer);
   const [selectedVolunteerId, setSelectedVolunteerId] = useState("");
   const [mergeSourceId, setMergeSourceId] = useState("");
@@ -220,6 +242,7 @@ export default function SupervisorPage() {
       setAttendance([]);
       setHistory([]);
       setTasks([]);
+      setLocations([]);
       setFeedback([]);
       setActivityLogs([]);
       return;
@@ -228,6 +251,7 @@ export default function SupervisorPage() {
     const unsubAttendance = watchLiveAttendance(selectedEventId, setAttendance);
     const unsubHistory = watchAttendanceHistory(selectedEventId, setHistory);
     const unsubTasks = watchTasks(selectedEventId, setTasks);
+    const unsubLocations = watchTaskLocations(selectedEventId, setLocations);
     const unsubFeedback = watchTaskFeedback(selectedEventId, setFeedback);
     const unsubActivityLogs = watchActivityLogs(selectedEventId, setActivityLogs);
 
@@ -235,6 +259,7 @@ export default function SupervisorPage() {
       unsubAttendance();
       unsubHistory();
       unsubTasks();
+      unsubLocations();
       unsubFeedback();
       unsubActivityLogs();
     };
@@ -372,12 +397,20 @@ export default function SupervisorPage() {
     if (!taskForm.title.trim() || !selectedEventId) return;
     setErrorMessage("");
     setSaving(true);
+    const leader = volunteers.find((volunteer) => volunteer.id === taskForm.taskLeaderVolunteerId);
+    const location = locations.find((item) => item.id === taskForm.locationId);
     const payload = {
       id: taskForm.id,
       eventId: selectedEventId,
       siteId,
       title: taskForm.title.trim(),
       description: taskForm.description.trim(),
+      taskLeaderVolunteerId: leader?.id ?? "",
+      taskLeaderName: leader ? `${leader.firstName} ${leader.lastName}`.trim() : "",
+      locationId: location?.id ?? "",
+      locationName: location?.name ?? "",
+      locationFloor: location?.floor ?? "",
+      locationZone: location?.zone ?? "",
       skillTags: taskForm.skillTags
         .split(",")
         .map((tag) => tag.trim())
@@ -389,6 +422,31 @@ export default function SupervisorPage() {
       setTaskForm(emptyTask);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to save task.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSaveLocation() {
+    if (!selectedEventId || !locationForm.name.trim()) return;
+    setErrorMessage("");
+    setSaving(true);
+
+    try {
+      if (hasSupervisorAccess) {
+        await saveTaskLocation({
+          id: locationForm.id,
+          eventId: selectedEventId,
+          siteId,
+          name: locationForm.name.trim(),
+          floor: locationForm.floor.trim(),
+          zone: locationForm.zone.trim(),
+          active: true
+        });
+      }
+      setLocationForm(emptyLocation);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to save location.");
     } finally {
       setSaving(false);
     }
@@ -692,7 +750,7 @@ export default function SupervisorPage() {
   function exportAssignmentsCsv() {
     const volunteerById = new Map(volunteers.map((volunteer) => [volunteer.id, volunteer]));
     downloadCsv(`${selectedEventId || "event"}-task-assignments.csv`, [
-      ["Event", "Task", "Status", "Volunteer", "Volunteer email", "Volunteer phone", "Skill tags"],
+      ["Event", "Task", "Status", "Task leader", "Location", "Floor", "Zone", "Volunteer", "Volunteer email", "Volunteer phone", "Skill tags"],
       ...tasks.flatMap((task) =>
         task.assignedVolunteerIds.map((volunteerId) => {
           const volunteer = volunteerById.get(volunteerId);
@@ -700,6 +758,10 @@ export default function SupervisorPage() {
             selectedEvent?.name ?? task.eventId,
             task.title,
             task.status,
+            task.taskLeaderName,
+            task.locationName,
+            task.locationFloor,
+            task.locationZone,
             volunteer ? `${volunteer.firstName} ${volunteer.lastName}`.trim() : volunteerId,
             volunteer?.email ?? "",
             volunteer?.phone ?? "",
@@ -1528,6 +1590,36 @@ export default function SupervisorPage() {
                             value={taskForm.description}
                             onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })}
                           />
+                          <label className="grid gap-1.5 text-sm font-semibold text-ink">
+                            Task leader
+                            <select
+                              className="focus-ring min-h-11 rounded-md border border-ink/15 bg-white px-3 text-base font-medium text-ink"
+                              value={taskForm.taskLeaderVolunteerId}
+                              onChange={(event) => setTaskForm({ ...taskForm, taskLeaderVolunteerId: event.target.value })}
+                            >
+                              <option value="">No task leader</option>
+                              {volunteers.map((volunteer) => (
+                                <option key={volunteer.id} value={volunteer.id}>
+                                  {volunteer.firstName} {volunteer.lastName}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-ink">
+                            Location
+                            <select
+                              className="focus-ring min-h-11 rounded-md border border-ink/15 bg-white px-3 text-base font-medium text-ink"
+                              value={taskForm.locationId}
+                              onChange={(event) => setTaskForm({ ...taskForm, locationId: event.target.value })}
+                            >
+                              <option value="">No location</option>
+                              {locations.map((location) => (
+                                <option key={location.id} value={location.id}>
+                                  {[location.floor, location.zone, location.name].filter(Boolean).join(" - ")}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                           <Field
                             label="Skill tags"
                             placeholder="setup, kids, hospitality"
@@ -1543,6 +1635,55 @@ export default function SupervisorPage() {
                           <Metric title="Tasks" value={tasks.length.toString()} />
                           <Metric title="In progress" value={tasks.filter((task) => task.status === "in-progress").length.toString()} />
                           <Metric title="Complete" value={tasks.filter((task) => task.status === "complete").length.toString()} />
+                          <div className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft sm:col-span-3">
+                            <h3 className="font-black">Locations</h3>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                              <Field label="Name" value={locationForm.name} onChange={(event) => setLocationForm({ ...locationForm, name: event.target.value })} />
+                              <Field label="Floor" value={locationForm.floor} onChange={(event) => setLocationForm({ ...locationForm, floor: event.target.value })} />
+                              <Field label="Zone" value={locationForm.zone} onChange={(event) => setLocationForm({ ...locationForm, zone: event.target.value })} />
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Button className="bg-moss text-white" disabled={saving || !selectedEventId || !locationForm.name.trim()} onClick={handleSaveLocation}>
+                                <Plus size={18} />
+                                {locationForm.id ? "Update Location" : "Add Location"}
+                              </Button>
+                              {locationForm.id && (
+                                <Button className="bg-paper text-ink" disabled={saving} onClick={() => setLocationForm(emptyLocation)}>
+                                  Clear
+                                </Button>
+                              )}
+                            </div>
+                            <div className="mt-3 grid max-h-44 gap-2 overflow-auto">
+                              {locations.length === 0 ? (
+                                <p className="rounded-md border border-ink/10 bg-paper p-3 text-sm font-semibold text-ink/60">No task locations yet.</p>
+                              ) : (
+                                locations.map((location) => (
+                                  <div key={location.id} className="flex items-center justify-between gap-2 rounded-md border border-ink/10 bg-paper p-2">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-black">{location.name}</p>
+                                      <p className="truncate text-xs font-bold text-ink/55">{[location.floor, location.zone].filter(Boolean).join(" - ") || "No floor or zone"}</p>
+                                    </div>
+                                    <div className="flex shrink-0 gap-1">
+                                      <Button className="min-h-9 bg-white px-2 text-ink" title="Edit location" onClick={() => setLocationForm(location)}>
+                                        <Pencil size={15} />
+                                      </Button>
+                                      <Button
+                                        className="min-h-9 bg-white px-2 text-clay"
+                                        title="Delete location"
+                                        disabled={saving}
+                                        onClick={async () => {
+                                          if (hasSupervisorAccess) await deleteTaskLocation(location.id);
+                                          setLocations((items) => items.filter((item) => item.id !== location.id));
+                                        }}
+                                      >
+                                        <Trash2 size={15} />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </section>
@@ -1552,6 +1693,7 @@ export default function SupervisorPage() {
                       <KanbanBoard
                         tasks={tasks}
                         volunteers={volunteers}
+                        locations={locations}
                         onStatusChange={(task, status: TaskStatus) => updateTask(task, { status })}
                         onDelete={async (taskId) => {
                           if (hasSupervisorAccess) await deleteTask(taskId);
@@ -1562,6 +1704,8 @@ export default function SupervisorPage() {
                             id: task.id,
                             title: task.title,
                             description: task.description,
+                            taskLeaderVolunteerId: task.taskLeaderVolunteerId,
+                            locationId: task.locationId,
                             skillTags: task.skillTags.join(", ")
                           })
                         }

@@ -2,7 +2,7 @@
 
 import { Check, Pencil, Trash2, UserMinus, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui";
-import type { VolunteerProfile, VolunteerTask, TaskStatus } from "@/lib/types";
+import type { VolunteerProfile, VolunteerTask, TaskStatus, TaskLocation } from "@/lib/types";
 
 const columns: Array<{ status: TaskStatus; label: string }> = [
   { status: "todo", label: "To do" },
@@ -13,6 +13,7 @@ const columns: Array<{ status: TaskStatus; label: string }> = [
 export function KanbanBoard({
   tasks,
   volunteers,
+  locations,
   onStatusChange,
   onDelete,
   onEdit,
@@ -20,6 +21,7 @@ export function KanbanBoard({
 }: {
   tasks: VolunteerTask[];
   volunteers: VolunteerProfile[];
+  locations: TaskLocation[];
   onStatusChange: (task: VolunteerTask, status: TaskStatus) => void;
   onDelete: (taskId: string) => void;
   onEdit: (task: VolunteerTask) => void;
@@ -29,6 +31,10 @@ export function KanbanBoard({
     const volunteer = volunteers.find((item) => item.id === id);
     return volunteer ? `${volunteer.firstName} ${volunteer.lastName}` : "Unknown";
   };
+
+  const hasMultipleFloors = new Set(locations.map((location) => location.floor).filter(Boolean)).size > 1;
+  const locationLabel = (task: VolunteerTask) =>
+    [hasMultipleFloors ? task.locationFloor : "", task.locationZone, task.locationName].filter(Boolean).join(" - ");
 
   return (
     <div className="grid gap-4 xl:grid-cols-3">
@@ -50,6 +56,16 @@ export function KanbanBoard({
                     <div>
                       <h4 className="font-black">{task.title}</h4>
                       <p className="mt-1 text-sm leading-6 text-ink/70">{task.description || "No description"}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {task.taskLeaderName && (
+                          <span className="rounded bg-gold px-2 py-1 text-xs font-black text-ink">
+                            Lead: {task.taskLeaderName}
+                          </span>
+                        )}
+                        {locationLabel(task) && (
+                          <span className="rounded bg-white px-2 py-1 text-xs font-bold text-ink/65">{locationLabel(task)}</span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex shrink-0 gap-1">
                       <Button className="min-h-9 bg-white px-2 text-ink" title="Edit task" onClick={() => onEdit(task)}>

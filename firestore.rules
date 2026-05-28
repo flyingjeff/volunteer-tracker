@@ -72,6 +72,11 @@ service cloud.firestore {
         );
     }
 
+    match /taskLocations/{locationId} {
+      allow read: if true;
+      allow write: if isSupervisorDomain();
+    }
+
     match /taskFeedback/{feedbackId} {
       allow create: if true;
       allow read, update, delete: if isSupervisorDomain();
