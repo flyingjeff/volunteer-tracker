@@ -170,6 +170,7 @@ export default function SupervisorPage() {
   const [eventFormOpen, setEventFormOpen] = useState(false);
   const [taskFormOpen, setTaskFormOpen] = useState(false);
   const [locationFormOpen, setLocationFormOpen] = useState(false);
+  const [volunteerFormOpen, setVolunteerFormOpen] = useState(false);
   const [notifications, setNotifications] = useState<SupervisorNotification[]>([]);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
   const [errorMessage, setErrorMessage] = useState("");
@@ -485,6 +486,7 @@ export default function SupervisorPage() {
       notDuplicate: volunteer.notDuplicate,
       consentAcknowledged: volunteer.consentAcknowledged
     });
+    setVolunteerFormOpen(true);
   }
 
   async function saveVolunteerLookups(email: string, phone: string, volunteerId: string) {
@@ -559,6 +561,7 @@ export default function SupervisorPage() {
       }
       setVolunteerForm(emptyVolunteer);
       setSelectedVolunteerId("");
+      setVolunteerFormOpen(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to save volunteer.");
     } finally {
@@ -614,6 +617,7 @@ export default function SupervisorPage() {
       if (selectedVolunteerId === volunteerId) {
         setVolunteerForm(emptyVolunteer);
         setSelectedVolunteerId("");
+        setVolunteerFormOpen(false);
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to delete volunteer.");
@@ -687,6 +691,25 @@ export default function SupervisorPage() {
       if (hasSupervisorAccess) await checkOut(session);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to check out volunteer.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSupervisorCheckOutAll() {
+    if (attendance.length === 0) return;
+    if (!window.confirm(`Check out all ${attendance.length} currently checked-in volunteer${attendance.length === 1 ? "" : "s"}?`)) return;
+
+    setErrorMessage("");
+    setSaving(true);
+    const sessions = [...attendance];
+
+    try {
+      if (hasSupervisorAccess) await Promise.all(sessions.map((item) => checkOut(item)));
+      const checkedOutSessionIds = new Set(sessions.map((item) => item.id));
+      setAttendance((items) => items.filter((item) => !checkedOutSessionIds.has(item.id)));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to check out all volunteers.");
     } finally {
       setSaving(false);
     }
@@ -941,11 +964,108 @@ export default function SupervisorPage() {
     setTaskFormOpen(false);
     setLocationForm(emptyLocation);
     setLocationFormOpen(false);
+    setVolunteerForm(emptyVolunteer);
+    setSelectedVolunteerId("");
+    setVolunteerFormOpen(false);
     setActiveView("tasks");
     setEventMenuOpen(false);
     setEventForm(emptyEvent);
     setEventFormOpen(false);
   }
+
+  const volunteerFormPanel = (
+    <div className="grid gap-3 rounded-md border border-ink/10 bg-paper p-3">
+      <h3 className="font-black">{selectedVolunteerId ? "Edit volunteer" : "Add volunteer"}</h3>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="First name" value={volunteerForm.firstName} onChange={(event) => setVolunteerForm({ ...volunteerForm, firstName: event.target.value })} />
+        <Field label="Last name" value={volunteerForm.lastName} onChange={(event) => setVolunteerForm({ ...volunteerForm, lastName: event.target.value })} />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Email" type="email" value={volunteerForm.email} onChange={(event) => setVolunteerForm({ ...volunteerForm, email: event.target.value })} />
+        <Field label="Phone" type="tel" value={volunteerForm.phone} onChange={(event) => setVolunteerForm({ ...volunteerForm, phone: event.target.value })} />
+      </div>
+      <Field label="Date of birth" type="date" value={volunteerForm.dateOfBirth} onChange={(event) => setVolunteerForm({ ...volunteerForm, dateOfBirth: event.target.value })} />
+      <Field
+        label="Skills/interests"
+        placeholder="kids, setup, greeting"
+        value={volunteerForm.skills}
+        onChange={(event) => setVolunteerForm({ ...volunteerForm, skills: event.target.value })}
+      />
+      <Field
+        label="Tags"
+        placeholder="supervisor, youth, follow-up"
+        value={volunteerForm.tags}
+        onChange={(event) => setVolunteerForm({ ...volunteerForm, tags: event.target.value })}
+      />
+      <Field
+        label="Emergency contact"
+        value={volunteerForm.emergencyContact}
+        onChange={(event) => setVolunteerForm({ ...volunteerForm, emergencyContact: event.target.value })}
+      />
+      <div className="grid gap-3 rounded-md border border-ink/10 bg-white p-3">
+        <p className="text-sm font-bold text-ink">Parent/guardian and waiver</p>
+        <Field label="Parent/guardian name" value={volunteerForm.guardianName} onChange={(event) => setVolunteerForm({ ...volunteerForm, guardianName: event.target.value })} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Parent/guardian phone" type="tel" value={volunteerForm.guardianPhone} onChange={(event) => setVolunteerForm({ ...volunteerForm, guardianPhone: event.target.value })} />
+          <Field label="Parent/guardian email" type="email" value={volunteerForm.guardianEmail} onChange={(event) => setVolunteerForm({ ...volunteerForm, guardianEmail: event.target.value })} />
+        </div>
+        <Field label="Waiver signer" value={volunteerForm.waiverSignerName} onChange={(event) => setVolunteerForm({ ...volunteerForm, waiverSignerName: event.target.value })} />
+        <label className="grid gap-1.5 text-sm font-semibold text-ink">
+          Signed by
+          <select
+            className="focus-ring min-h-11 rounded-md border border-ink/15 bg-white px-3 text-base font-medium text-ink"
+            value={volunteerForm.waiverSignedBy}
+            onChange={(event) =>
+              setVolunteerForm({
+                ...volunteerForm,
+                waiverSignedBy: event.target.value === "guardian" ? "guardian" : event.target.value === "volunteer" ? "volunteer" : ""
+              })
+            }
+          >
+            <option value="">Not recorded</option>
+            <option value="volunteer">Volunteer</option>
+            <option value="guardian">Parent/guardian</option>
+          </select>
+        </label>
+      </div>
+      <TextArea label="Notes" value={volunteerForm.notes} onChange={(event) => setVolunteerForm({ ...volunteerForm, notes: event.target.value })} />
+      <label className="flex items-center gap-3 rounded-md border border-ink/10 bg-white p-3 text-sm font-semibold text-ink">
+        <input
+          className="h-5 w-5 accent-moss"
+          type="checkbox"
+          checked={volunteerForm.notDuplicate}
+          onChange={(event) => setVolunteerForm({ ...volunteerForm, notDuplicate: event.target.checked })}
+        />
+        Not a duplicate
+      </label>
+      <label className="flex items-center gap-3 rounded-md border border-ink/10 bg-white p-3 text-sm font-semibold text-ink">
+        <input
+          className="h-5 w-5 accent-moss"
+          type="checkbox"
+          checked={volunteerForm.consentAcknowledged}
+          onChange={(event) => setVolunteerForm({ ...volunteerForm, consentAcknowledged: event.target.checked })}
+        />
+        Consent acknowledged
+      </label>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Button className="bg-moss text-white" disabled={saving || !volunteerForm.firstName || !volunteerForm.lastName} onClick={handleSaveVolunteer}>
+          <Plus size={18} />
+          {selectedVolunteerId ? "Update Volunteer" : "Add Volunteer"}
+        </Button>
+        <Button
+          className="bg-white text-ink"
+          onClick={() => {
+            setVolunteerForm(emptyVolunteer);
+            setSelectedVolunteerId("");
+            setVolunteerFormOpen(false);
+          }}
+        >
+          <X size={18} />
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
 
   const volunteerManagementConsole = (
     <section className="rounded-md border border-ink/10 bg-white p-4">
@@ -955,6 +1075,17 @@ export default function SupervisorPage() {
           <p className="mt-1 text-sm font-semibold text-ink/55">Correct global profiles, waiver records, duplicates, and contact details.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            className="bg-moss text-white"
+            onClick={() => {
+              setVolunteerForm(emptyVolunteer);
+              setSelectedVolunteerId("");
+              setVolunteerFormOpen(true);
+            }}
+          >
+            <Plus size={18} />
+            Add Volunteer
+          </Button>
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink/45" size={17} />
             <input
@@ -1053,99 +1184,7 @@ export default function SupervisorPage() {
         </Button>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
-        <div className="grid gap-3 rounded-md border border-ink/10 bg-paper p-3">
-          <h3 className="font-black">{selectedVolunteerId ? "Edit volunteer" : "Add volunteer"}</h3>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="First name" value={volunteerForm.firstName} onChange={(event) => setVolunteerForm({ ...volunteerForm, firstName: event.target.value })} />
-            <Field label="Last name" value={volunteerForm.lastName} onChange={(event) => setVolunteerForm({ ...volunteerForm, lastName: event.target.value })} />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Email" type="email" value={volunteerForm.email} onChange={(event) => setVolunteerForm({ ...volunteerForm, email: event.target.value })} />
-            <Field label="Phone" type="tel" value={volunteerForm.phone} onChange={(event) => setVolunteerForm({ ...volunteerForm, phone: event.target.value })} />
-          </div>
-          <Field label="Date of birth" type="date" value={volunteerForm.dateOfBirth} onChange={(event) => setVolunteerForm({ ...volunteerForm, dateOfBirth: event.target.value })} />
-          <Field
-            label="Skills/interests"
-            placeholder="kids, setup, greeting"
-            value={volunteerForm.skills}
-            onChange={(event) => setVolunteerForm({ ...volunteerForm, skills: event.target.value })}
-          />
-          <Field
-            label="Tags"
-            placeholder="supervisor, youth, follow-up"
-            value={volunteerForm.tags}
-            onChange={(event) => setVolunteerForm({ ...volunteerForm, tags: event.target.value })}
-          />
-          <Field
-            label="Emergency contact"
-            value={volunteerForm.emergencyContact}
-            onChange={(event) => setVolunteerForm({ ...volunteerForm, emergencyContact: event.target.value })}
-          />
-          <div className="grid gap-3 rounded-md border border-ink/10 bg-white p-3">
-            <p className="text-sm font-bold text-ink">Parent/guardian and waiver</p>
-            <Field label="Parent/guardian name" value={volunteerForm.guardianName} onChange={(event) => setVolunteerForm({ ...volunteerForm, guardianName: event.target.value })} />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Parent/guardian phone" type="tel" value={volunteerForm.guardianPhone} onChange={(event) => setVolunteerForm({ ...volunteerForm, guardianPhone: event.target.value })} />
-              <Field label="Parent/guardian email" type="email" value={volunteerForm.guardianEmail} onChange={(event) => setVolunteerForm({ ...volunteerForm, guardianEmail: event.target.value })} />
-            </div>
-            <Field label="Waiver signer" value={volunteerForm.waiverSignerName} onChange={(event) => setVolunteerForm({ ...volunteerForm, waiverSignerName: event.target.value })} />
-            <label className="grid gap-1.5 text-sm font-semibold text-ink">
-              Signed by
-              <select
-                className="focus-ring min-h-11 rounded-md border border-ink/15 bg-white px-3 text-base font-medium text-ink"
-                value={volunteerForm.waiverSignedBy}
-                onChange={(event) =>
-                  setVolunteerForm({
-                    ...volunteerForm,
-                    waiverSignedBy: event.target.value === "guardian" ? "guardian" : event.target.value === "volunteer" ? "volunteer" : ""
-                  })
-                }
-              >
-                <option value="">Not recorded</option>
-                <option value="volunteer">Volunteer</option>
-                <option value="guardian">Parent/guardian</option>
-              </select>
-            </label>
-          </div>
-          <TextArea label="Notes" value={volunteerForm.notes} onChange={(event) => setVolunteerForm({ ...volunteerForm, notes: event.target.value })} />
-          <label className="flex items-center gap-3 rounded-md border border-ink/10 bg-white p-3 text-sm font-semibold text-ink">
-            <input
-              className="h-5 w-5 accent-moss"
-              type="checkbox"
-              checked={volunteerForm.notDuplicate}
-              onChange={(event) => setVolunteerForm({ ...volunteerForm, notDuplicate: event.target.checked })}
-            />
-            Not a duplicate
-          </label>
-          <label className="flex items-center gap-3 rounded-md border border-ink/10 bg-white p-3 text-sm font-semibold text-ink">
-            <input
-              className="h-5 w-5 accent-moss"
-              type="checkbox"
-              checked={volunteerForm.consentAcknowledged}
-              onChange={(event) => setVolunteerForm({ ...volunteerForm, consentAcknowledged: event.target.checked })}
-            />
-            Consent acknowledged
-          </label>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Button className="bg-moss text-white" disabled={saving || !volunteerForm.firstName || !volunteerForm.lastName} onClick={handleSaveVolunteer}>
-              <Plus size={18} />
-              {selectedVolunteerId ? "Update Volunteer" : "Add Volunteer"}
-            </Button>
-            <Button
-              className="bg-white text-ink"
-              onClick={() => {
-                setVolunteerForm(emptyVolunteer);
-                setSelectedVolunteerId("");
-              }}
-            >
-              <X size={18} />
-              Clear
-            </Button>
-          </div>
-        </div>
-
-        <div className="max-h-[42rem] overflow-auto">
+      <div className="mt-4 max-h-[42rem] overflow-auto">
           <table className="w-full min-w-[62rem] border-separate border-spacing-y-2 text-left text-sm">
             <thead className="text-xs uppercase tracking-[0.12em] text-ink/45">
               <tr>
@@ -1242,7 +1281,6 @@ export default function SupervisorPage() {
               ))}
             </tbody>
           </table>
-        </div>
       </div>
     </section>
   );
@@ -1315,6 +1353,31 @@ export default function SupervisorPage() {
                 </div>
               </article>
             ))}
+          </div>
+        )}
+
+        {hasSupervisorAccess && volunteerFormOpen && (
+          <div className="fixed inset-0 z-40 overflow-y-auto bg-ink/55 px-4 py-6">
+            <section className="mx-auto w-full max-w-3xl rounded-lg bg-white p-4 shadow-soft">
+              <div className="flex flex-col gap-3 rounded-md bg-ink p-4 text-white sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-2xl font-black">{selectedVolunteerId ? "Edit volunteer" : "Add volunteer"}</h2>
+                  <p className="mt-1 text-sm font-semibold text-white/65">Manage profile details, waiver status, tags, and duplicate review.</p>
+                </div>
+                <Button
+                  className="bg-white text-ink"
+                  onClick={() => {
+                    setVolunteerForm(emptyVolunteer);
+                    setSelectedVolunteerId("");
+                    setVolunteerFormOpen(false);
+                  }}
+                >
+                  <X size={18} />
+                  Close
+                </Button>
+              </div>
+              <div className="mt-4">{volunteerFormPanel}</div>
+            </section>
           </div>
         )}
 
@@ -1944,6 +2007,10 @@ export default function SupervisorPage() {
                             <h2 className="text-xl font-black">Live attendance</h2>
                           </div>
                           <div className="flex flex-wrap gap-2">
+                            <Button className="bg-clay text-white" disabled={saving || attendance.length === 0} onClick={handleSupervisorCheckOutAll}>
+                              <LogOut size={17} />
+                              Check Out All
+                            </Button>
                             <Button className="bg-paper text-ink" disabled={!selectedEventId} onClick={exportAttendanceCsv}>
                               <Download size={17} />
                               Attendance CSV
