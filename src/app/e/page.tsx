@@ -19,7 +19,7 @@ import {
   watchTasks
 } from "@/lib/firebaseService";
 import { isFirebaseConfigured } from "@/lib/firebase";
-import { clearBrowserToken, getOrCreateBrowserToken, getSavedVolunteerId, saveVolunteerSession, sha256 } from "@/lib/token";
+import { clearBrowserToken, getOrCreateBrowserToken, getSavedVolunteerId, getSavedVolunteerProfile, saveVolunteerSession, sha256 } from "@/lib/token";
 import { getVolunteerLookupIds } from "@/lib/volunteerLookup";
 import { demoAttendance, demoTasks } from "@/lib/mockData";
 import type { AttendanceSession, EventSite, VolunteerProfile, VolunteerTask } from "@/lib/types";
@@ -147,10 +147,21 @@ export default function VolunteerEventPage() {
 
       if (configured) {
         const savedVolunteerId = getSavedVolunteerId();
-        const existing = (savedVolunteerId ? await findVolunteerById(savedVolunteerId) : null) ?? await findVolunteerByTokenHash(hash);
+        const savedVolunteer = getSavedVolunteerProfile();
+        let existing: VolunteerProfile | null = null;
+
+        if (savedVolunteerId) {
+          try {
+            existing = await findVolunteerById(savedVolunteerId);
+          } catch {
+            existing = savedVolunteer?.id === savedVolunteerId ? savedVolunteer : null;
+          }
+        }
+
+        existing = existing ?? savedVolunteer ?? await findVolunteerByTokenHash(hash);
         if (existing) {
           setVolunteer(existing);
-          saveVolunteerSession(existing.id);
+          saveVolunteerSession(existing);
         }
       }
 
@@ -264,7 +275,7 @@ export default function VolunteerEventPage() {
         const id = await upsertVolunteer(tokenHash, profile);
         const savedVolunteer = { ...profile, id, browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() };
         setVolunteer(savedVolunteer);
-        saveVolunteerSession(id);
+        saveVolunteerSession(savedVolunteer);
         await addActivityLog({
           eventId,
           siteId,
@@ -284,7 +295,7 @@ export default function VolunteerEventPage() {
       } else {
         const savedVolunteer = { ...profile, id: "demo-local", browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() };
         setVolunteer(savedVolunteer);
-        saveVolunteerSession(savedVolunteer.id);
+        saveVolunteerSession(savedVolunteer);
         setSession({
           id: "local-session",
           eventId,
@@ -370,7 +381,7 @@ export default function VolunteerEventPage() {
       }
 
       setVolunteer(existing);
-      saveVolunteerSession(existing.id);
+      saveVolunteerSession(existing);
       setFindProfile(emptyFindProfile);
       setProfileMatches([]);
       setSentMessage((message) => message || "Profile found. Welcome back.");
