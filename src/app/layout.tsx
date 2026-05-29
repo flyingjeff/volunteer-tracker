@@ -3,8 +3,8 @@ import "./globals.css";
 import { PwaRegistration } from "@/components/PwaRegistration";
 
 export const metadata: Metadata = {
-  title: "Su Presencia Volunteer Check-In",
-  description: "Mobile volunteer check-in and supervisor dashboard for Su Presencia Church.",
+  title: "Su Presencia Volunteer Dashboard",
+  description: "Mobile volunteer dashboard and supervisor workspace for Su Presencia Church.",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: "/favicon.png",

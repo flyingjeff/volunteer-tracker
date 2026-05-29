@@ -71,6 +71,7 @@ export type TaskLocation = {
   eventId: string;
   siteId: string;
   name: string;
+  description: string;
   floor: string;
   zone: string;
   active: boolean;

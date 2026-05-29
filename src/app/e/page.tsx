@@ -14,6 +14,7 @@ import {
   saveVolunteerLookup,
   upsertVolunteer,
   watchEvent,
+  watchLiveAttendance,
   watchVolunteerAttendanceSession,
   watchTasks
 } from "@/lib/firebaseService";
@@ -125,6 +126,7 @@ export default function VolunteerEventPage() {
   const [volunteer, setVolunteer] = useState<VolunteerProfile | null>(null);
   const [profileMatches, setProfileMatches] = useState<VolunteerProfile[]>([]);
   const [session, setSession] = useState<AttendanceSession | null>(null);
+  const [liveAttendance, setLiveAttendance] = useState<AttendanceSession[]>(configured ? [] : demoAttendance);
   const [tasks, setTasks] = useState<VolunteerTask[]>(configured ? [] : demoTasks);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [findProfile, setFindProfile] = useState<FindProfileState>(emptyFindProfile);
@@ -160,11 +162,13 @@ export default function VolunteerEventPage() {
   useEffect(() => {
     if (!configured) {
       setSession(demoAttendance[0]);
+      setLiveAttendance(demoAttendance);
       return;
     }
 
     const unwatchEvent = watchEvent(eventId, setEventDetails);
     const unwatchTasks = watchTasks(eventId, setTasks);
+    const unwatchLiveAttendance = watchLiveAttendance(eventId, setLiveAttendance);
     const unwatchAttendance =
       tokenHash && volunteer
         ? watchVolunteerAttendanceSession(eventId, siteId, tokenHash, setSession)
@@ -173,9 +177,16 @@ export default function VolunteerEventPage() {
     return () => {
       unwatchEvent();
       unwatchAttendance();
+      unwatchLiveAttendance();
       unwatchTasks();
     };
   }, [configured, eventId, tokenHash, volunteer]);
+
+  const checkedInVolunteerNames = useMemo(() => {
+    const names = new Map<string, string>();
+    liveAttendance.forEach((item) => names.set(item.volunteerId, item.volunteerName));
+    return names;
+  }, [liveAttendance]);
 
   const assignedTasks = useMemo(
     () => tasks.filter((task) => volunteer && task.assignedVolunteerIds.includes(volunteer.id)),
@@ -198,6 +209,13 @@ export default function VolunteerEventPage() {
     Boolean(form.lastName.trim()) &&
     Boolean(form.dateOfBirth) &&
     (!isMinor || (Boolean(form.guardianName.trim()) && (Boolean(form.guardianPhone.trim()) || Boolean(form.guardianEmail.trim()))));
+
+  function checkedInAssigneeNames(task: VolunteerTask) {
+    return task.assignedVolunteerIds
+      .filter((volunteerId) => volunteerId !== volunteer?.id)
+      .map((volunteerId) => checkedInVolunteerNames.get(volunteerId))
+      .filter((name): name is string => Boolean(name));
+  }
 
   async function saveProfileLookups(email: string, phone: string, volunteerId: string) {
     const lookupIds = await getVolunteerLookupIds(email, phone);
@@ -490,7 +508,7 @@ export default function VolunteerEventPage() {
   }
 
   if (loading) {
-    return <main className="grid min-h-screen place-items-center px-5 text-sm font-semibold text-ink">Loading check-in...</main>;
+    return <main className="grid min-h-screen place-items-center px-5 text-sm font-semibold text-ink">Loading dashboard...</main>;
   }
 
   return (
@@ -498,7 +516,7 @@ export default function VolunteerEventPage() {
       <div className="mx-auto max-w-md">
         <header className="rounded-lg bg-moss p-5 text-white shadow-soft">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/75">Su Presencia Church</p>
-          <h1 className="mt-2 text-3xl font-black">Volunteer Check-In</h1>
+          <h1 className="mt-2 text-3xl font-black">Volunteer Dashboard</h1>
           <p className="mt-2 text-sm font-medium text-white/80">
             {eventDetails?.name ?? eventId}
             {eventDetails?.location ? ` | ${eventDetails.location}` : ""}
@@ -716,27 +734,43 @@ export default function VolunteerEventPage() {
               </div>
               <div className="mt-3 grid gap-3">
                 {assignedTasks.length > 0 ? (
-                  assignedTasks.map((task) => (
-                    <article key={task.id} className="rounded-md border border-ink/10 bg-paper p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <h3 className="font-black">{task.title}</h3>
-                        <span className="rounded bg-white px-2 py-1 text-xs font-bold text-moss">{task.status}</span>
-                      </div>
-                      <p className="mt-1 text-sm leading-6 text-ink/70">{task.description}</p>
-                      <div className="mt-3 grid gap-2">
-                        <TextArea
-                          label="Notes or feedback"
-                          placeholder="Share progress, blockers, supplies needed, or handoff notes."
-                          value={taskNotes[task.id] ?? ""}
-                          onChange={(event) => setTaskNotes((notes) => ({ ...notes, [task.id]: event.target.value }))}
-                        />
-                        <Button className="bg-moss text-white" disabled={saving || !taskNotes[task.id]?.trim()} onClick={() => submitTaskNote(task)}>
-                          <Send size={17} />
-                          Send Note
-                        </Button>
-                      </div>
-                    </article>
-                  ))
+                  assignedTasks.map((task) => {
+                    const teammateNames = checkedInAssigneeNames(task);
+
+                    return (
+                      <article key={task.id} className="rounded-md border border-ink/10 bg-paper p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <h3 className="font-black">{task.title}</h3>
+                          <span className="rounded bg-white px-2 py-1 text-xs font-bold text-moss">{task.status}</span>
+                        </div>
+                        <p className="mt-1 text-sm leading-6 text-ink/70">{task.description}</p>
+                        {teammateNames.length > 0 && (
+                          <div className="mt-3 rounded-md border border-ink/10 bg-white p-2">
+                            <p className="text-xs font-black uppercase tracking-[0.12em] text-ink/45">Also checked in</p>
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {teammateNames.map((name) => (
+                                <span key={name} className="rounded bg-paper px-2 py-1 text-xs font-bold text-ink/70">
+                                  {name}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div className="mt-3 grid gap-2">
+                          <TextArea
+                            label="Notes or feedback"
+                            placeholder="Share progress, blockers, supplies needed, or handoff notes."
+                            value={taskNotes[task.id] ?? ""}
+                            onChange={(event) => setTaskNotes((notes) => ({ ...notes, [task.id]: event.target.value }))}
+                          />
+                          <Button className="bg-moss text-white" disabled={saving || !taskNotes[task.id]?.trim()} onClick={() => submitTaskNote(task)}>
+                            <Send size={17} />
+                            Send Note
+                          </Button>
+                        </div>
+                      </article>
+                    );
+                  })
                 ) : (
                   <div className="rounded-md border border-ink/10 bg-paper p-3 text-sm font-semibold text-ink/65">
                     No tasks assigned yet.

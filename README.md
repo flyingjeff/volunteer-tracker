@@ -1,6 +1,6 @@
-# Su Presencia Volunteer Check-In
+# Su Presencia Volunteer Dashboard
 
-Mobile-first volunteer check-in MVP for Su Presencia Church using Next.js, TypeScript, Tailwind CSS, Firebase Auth, and Firestore.
+Mobile-first volunteer dashboard MVP for Su Presencia Church using Next.js, TypeScript, Tailwind CSS, Firebase Auth, and Firestore.
 
 ## Project Structure
 

@@ -89,6 +89,22 @@ The find-profile flow writes lookup hashes for normalized email, normalized phon
 }
 ```
 
+## `taskLocations/{locationId}`
+
+```ts
+{
+  eventId: string;
+  siteId: string;
+  name: string;
+  description: string;
+  floor: string;
+  zone: string;
+  active: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+```
+
 ## `taskFeedback/{feedbackId}`
 
 ```ts

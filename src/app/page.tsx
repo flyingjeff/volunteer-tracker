@@ -14,7 +14,7 @@ export default function HomePage() {
         <nav className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-leaf">Su Presencia Church</p>
-            <h1 className="mt-1 text-2xl font-bold text-ink">Volunteer Check-In</h1>
+            <h1 className="mt-1 text-2xl font-bold text-ink">Volunteer Dashboard</h1>
           </div>
           <Link
             href="/supervisor"
@@ -28,7 +28,7 @@ export default function HomePage() {
           <div className="max-w-2xl">
             <p className="text-sm font-semibold text-clay">Operations workspace</p>
             <h2 className="mt-3 text-4xl font-black leading-tight text-ink sm:text-6xl">
-              Run volunteer check-in with live event control.
+              Run the volunteer dashboard with live event control.
             </h2>
             <p className="mt-5 text-base leading-7 text-ink/75 sm:text-lg">
               Supervisors manage active events, publish check-in links, track volunteer attendance, assign tasks, and

@@ -55,12 +55,14 @@ const emptyTask: TaskForm = {
 type LocationForm = {
   id?: string;
   name: string;
+  description: string;
   floor: string;
   zone: string;
 };
 
 const emptyLocation: LocationForm = {
   name: "",
+  description: "",
   floor: "",
   zone: ""
 };
@@ -447,6 +449,7 @@ export default function SupervisorPage() {
           eventId: selectedEventId,
           siteId,
           name: locationForm.name.trim(),
+          description: locationForm.description.trim(),
           floor: locationForm.floor.trim(),
           zone: locationForm.zone.trim(),
           active: true
@@ -1678,6 +1681,11 @@ export default function SupervisorPage() {
                   </div>
                   <div className="mt-4 grid gap-3 rounded-md border border-ink/10 bg-paper p-4">
                     <Field label="Name" value={locationForm.name} onChange={(event) => setLocationForm({ ...locationForm, name: event.target.value })} />
+                    <TextArea
+                      label="Description"
+                      value={locationForm.description}
+                      onChange={(event) => setLocationForm({ ...locationForm, description: event.target.value })}
+                    />
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Field label="Floor" value={locationForm.floor} onChange={(event) => setLocationForm({ ...locationForm, floor: event.target.value })} />
                       <Field label="Zone" value={locationForm.zone} onChange={(event) => setLocationForm({ ...locationForm, zone: event.target.value })} />
@@ -1856,6 +1864,7 @@ export default function SupervisorPage() {
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-black">{location.name}</p>
                                   <p className="truncate text-xs font-bold text-ink/55">{[location.floor, location.zone].filter(Boolean).join(" - ") || "No floor or zone"}</p>
+                                  {location.description && <p className="mt-1 line-clamp-2 text-xs font-semibold leading-5 text-ink/60">{location.description}</p>}
                                 </div>
                                 <div className="flex shrink-0 gap-1">
                                   <Button

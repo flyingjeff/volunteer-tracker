@@ -1,7 +1,7 @@
 {
-  "name": "Su Presencia Volunteer Check-In",
+  "name": "Su Presencia Volunteer Dashboard",
   "short_name": "SP Volunteers",
-  "description": "Volunteer check-in and supervisor task dashboard for Su Presencia Church.",
+  "description": "Volunteer dashboard and supervisor task workspace for Su Presencia Church.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#faf8f2",
