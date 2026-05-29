@@ -255,21 +255,20 @@ function AutoScrollArea({ children, watchKey }: { children: ReactNode; watchKey:
     }
 
     element.scrollTop = 0;
-    let frameId = 0;
-    let lastTime = performance.now();
     const pixelsPerSecond = 22;
-
-    function tick(time: number) {
+    let lastTime = Date.now();
+    const intervalId = window.setInterval(() => {
       const target = scrollRef.current;
       const primaryContent = contentRef.current;
       if (!target || !primaryContent) return;
 
-      const elapsed = Math.min(time - lastTime, 50);
+      const nowTime = Date.now();
+      const elapsed = Math.min(nowTime - lastTime, 120);
+      lastTime = nowTime;
+
       const contentHeight = primaryContent.scrollHeight;
       if (contentHeight <= target.clientHeight + 4) {
         target.scrollTop = 0;
-        lastTime = time;
-        frameId = requestAnimationFrame(tick);
         return;
       }
 
@@ -277,13 +276,9 @@ function AutoScrollArea({ children, watchKey }: { children: ReactNode; watchKey:
       if (target.scrollTop >= contentHeight) {
         target.scrollTop -= contentHeight;
       }
+    }, 40);
 
-      lastTime = time;
-      frameId = requestAnimationFrame(tick);
-    }
-
-    frameId = requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frameId);
+    return () => window.clearInterval(intervalId);
   }, [canScroll, watchKey]);
 
   return (
