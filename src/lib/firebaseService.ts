@@ -198,7 +198,11 @@ async function getAvailableEventId(name: string, startsAt: Date) {
 }
 
 export async function findVolunteerByTokenHash(tokenHash: string) {
-  const match = await getDoc(doc(db, "volunteers", tokenHash));
+  return findVolunteerById(tokenHash);
+}
+
+export async function findVolunteerById(volunteerId: string) {
+  const match = await getDoc(doc(db, "volunteers", volunteerId));
   return match.exists() ? mapVolunteer(match.id, match.data()) : null;
 }
 

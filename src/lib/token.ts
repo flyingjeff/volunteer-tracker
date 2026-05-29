@@ -1,4 +1,5 @@
 const STORAGE_KEY = "spc_volunteer_token";
+const VOLUNTEER_ID_KEY = "spc_volunteer_id";
 
 export function getOrCreateBrowserToken() {
   if (typeof window === "undefined") return "";
@@ -16,6 +17,17 @@ export function getOrCreateBrowserToken() {
 export function clearBrowserToken() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(STORAGE_KEY);
+  window.localStorage.removeItem(VOLUNTEER_ID_KEY);
+}
+
+export function getSavedVolunteerId() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(VOLUNTEER_ID_KEY) ?? "";
+}
+
+export function saveVolunteerSession(volunteerId: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(VOLUNTEER_ID_KEY, volunteerId);
 }
 
 export async function sha256(value: string) {

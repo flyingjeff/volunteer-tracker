@@ -9,17 +9,17 @@ import {
   checkIn,
   checkOut,
   findVolunteersByLookup,
+  findVolunteerById,
   findVolunteerByTokenHash,
   joinTask,
   saveVolunteerLookup,
   upsertVolunteer,
   watchEvent,
   watchLiveAttendance,
-  watchVolunteerAttendanceSession,
   watchTasks
 } from "@/lib/firebaseService";
 import { isFirebaseConfigured } from "@/lib/firebase";
-import { clearBrowserToken, getOrCreateBrowserToken, sha256 } from "@/lib/token";
+import { clearBrowserToken, getOrCreateBrowserToken, getSavedVolunteerId, saveVolunteerSession, sha256 } from "@/lib/token";
 import { getVolunteerLookupIds } from "@/lib/volunteerLookup";
 import { demoAttendance, demoTasks } from "@/lib/mockData";
 import type { AttendanceSession, EventSite, VolunteerProfile, VolunteerTask } from "@/lib/types";
@@ -146,8 +146,12 @@ export default function VolunteerEventPage() {
       setTokenHash(hash);
 
       if (configured) {
-        const existing = await findVolunteerByTokenHash(hash);
-        if (existing) setVolunteer(existing);
+        const savedVolunteerId = getSavedVolunteerId();
+        const existing = (savedVolunteerId ? await findVolunteerById(savedVolunteerId) : null) ?? await findVolunteerByTokenHash(hash);
+        if (existing) {
+          setVolunteer(existing);
+          saveVolunteerSession(existing.id);
+        }
       }
 
       setLoading(false);
@@ -169,18 +173,22 @@ export default function VolunteerEventPage() {
     const unwatchEvent = watchEvent(eventId, setEventDetails);
     const unwatchTasks = watchTasks(eventId, setTasks);
     const unwatchLiveAttendance = watchLiveAttendance(eventId, setLiveAttendance);
-    const unwatchAttendance =
-      tokenHash && volunteer
-        ? watchVolunteerAttendanceSession(eventId, siteId, tokenHash, setSession)
-        : () => undefined;
 
     return () => {
       unwatchEvent();
-      unwatchAttendance();
       unwatchLiveAttendance();
       unwatchTasks();
     };
-  }, [configured, eventId, tokenHash, volunteer]);
+  }, [configured, eventId]);
+
+  useEffect(() => {
+    if (!configured || !volunteer) return;
+
+    const activeSession = liveAttendance.find(
+      (item) => item.eventId === eventId && item.siteId === siteId && item.volunteerId === volunteer.id
+    );
+    setSession(activeSession ?? null);
+  }, [configured, eventId, liveAttendance, siteId, volunteer]);
 
   const checkedInVolunteerNames = useMemo(() => {
     const names = new Map<string, string>();
@@ -256,6 +264,7 @@ export default function VolunteerEventPage() {
         const id = await upsertVolunteer(tokenHash, profile);
         const savedVolunteer = { ...profile, id, browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() };
         setVolunteer(savedVolunteer);
+        saveVolunteerSession(id);
         await addActivityLog({
           eventId,
           siteId,
@@ -275,6 +284,7 @@ export default function VolunteerEventPage() {
       } else {
         const savedVolunteer = { ...profile, id: "demo-local", browserTokenHash: tokenHash, createdAt: new Date(), updatedAt: new Date() };
         setVolunteer(savedVolunteer);
+        saveVolunteerSession(savedVolunteer.id);
         setSession({
           id: "local-session",
           eventId,
@@ -360,6 +370,7 @@ export default function VolunteerEventPage() {
       }
 
       setVolunteer(existing);
+      saveVolunteerSession(existing.id);
       setFindProfile(emptyFindProfile);
       setProfileMatches([]);
       setSentMessage((message) => message || "Profile found. Welcome back.");
