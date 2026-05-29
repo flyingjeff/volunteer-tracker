@@ -291,11 +291,11 @@ function AutoScrollArea({ children, watchKey }: { children: ReactNode; watchKey:
       ref={scrollRef}
       className="mt-3 min-h-0 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
     >
-      <div ref={contentRef} className="grid content-start gap-[min(1.1vh,0.75rem)]">
+      <div ref={contentRef} className="grid grid-cols-1 content-start gap-[min(1.1vh,0.75rem)]">
         {children}
       </div>
       {canScroll && (
-        <div aria-hidden className="mt-[min(1.1vh,0.75rem)] grid content-start gap-[min(1.1vh,0.75rem)]">
+        <div aria-hidden className="mt-[min(1.1vh,0.75rem)] grid grid-cols-1 content-start gap-[min(1.1vh,0.75rem)]">
           {children}
         </div>
       )}
@@ -305,7 +305,7 @@ function AutoScrollArea({ children, watchKey }: { children: ReactNode; watchKey:
 
 function TaskCard({ task, locationLabel }: { task: VolunteerTask; locationLabel: string }) {
   return (
-    <article className="rounded-md border border-ink/10 bg-paper p-[min(1.4vh,1rem)]">
+    <article className="w-full rounded-md border border-ink/10 bg-paper p-[min(1.4vh,1rem)]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="truncate text-[clamp(1.1rem,1.7vw,1.65rem)] font-black">{task.title}</h3>
@@ -336,11 +336,11 @@ function TaskCard({ task, locationLabel }: { task: VolunteerTask; locationLabel:
 
 function AttendanceCard({ session }: { session: AttendanceSession }) {
   return (
-    <article
-      className={`rounded-md border p-[min(1.3vh,0.9rem)] ${
-        session.isSupervisor ? "border-gold bg-gold/15 ring-2 ring-gold/30" : "border-ink/10 bg-paper"
-      }`}
-    >
+      <article
+        className={`rounded-md border p-[min(1.3vh,0.9rem)] ${
+          session.isSupervisor ? "border-gold bg-gold/15 ring-2 ring-gold/30" : "border-ink/10 bg-paper"
+        } w-full`}
+      >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -414,7 +414,7 @@ function EventQrImage({ value, alt, className }: { value: string; alt: string; c
 
 function EmptyBoardMessage({ message }: { message: string }) {
   return (
-    <div className="rounded-md border border-ink/10 bg-paper p-4 text-sm font-bold text-ink/55">
+    <div className="w-full rounded-md border border-ink/10 bg-paper p-4 text-sm font-bold text-ink/55">
       {message}
     </div>
   );
