@@ -221,19 +221,26 @@ function AutoScrollArea({ children, watchKey }: { children: ReactNode; watchKey:
       const target = scrollRef.current;
       const primaryContent = contentRef.current;
       if (!target || !primaryContent) return;
-      setCanScroll(primaryContent.scrollHeight > target.clientHeight + 4);
+      const contentHeight = primaryContent.getBoundingClientRect().height;
+      setCanScroll(contentHeight > target.clientHeight + 2);
     }
 
     updateScrollState();
+    window.requestAnimationFrame(updateScrollState);
     const observer = new ResizeObserver(updateScrollState);
     observer.observe(container);
     observer.observe(content);
+    const mutationObserver = new MutationObserver(updateScrollState);
+    mutationObserver.observe(content, { childList: true, subtree: true });
+    const intervalId = window.setInterval(updateScrollState, 1500);
 
     window.addEventListener("resize", updateScrollState);
     const timeoutId = window.setTimeout(updateScrollState, 250);
 
     return () => {
       observer.disconnect();
+      mutationObserver.disconnect();
+      window.clearInterval(intervalId);
       window.removeEventListener("resize", updateScrollState);
       window.clearTimeout(timeoutId);
     };
@@ -280,7 +287,10 @@ function AutoScrollArea({ children, watchKey }: { children: ReactNode; watchKey:
   }, [canScroll, watchKey]);
 
   return (
-    <div ref={scrollRef} className="mt-3 min-h-0 overflow-hidden">
+    <div
+      ref={scrollRef}
+      className="mt-3 min-h-0 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+    >
       <div ref={contentRef} className="grid content-start gap-[min(1.1vh,0.75rem)]">
         {children}
       </div>
